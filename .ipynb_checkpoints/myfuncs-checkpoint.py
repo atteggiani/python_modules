@@ -457,11 +457,11 @@ class DataArray(xr.DataArray):
             keys = x.attrs.keys()
             name = x.name if x.name is not None else 'data'
             if 'long_name' in keys:
-                title = x.attrs['long_name']
+                title = x.attrs['long_name'] if x.attrs['long_name'] is not None else ''
             else:
-                title = x.name
+                title = x.name if x.name is not None else ''
             if 'units' in keys:
-                units = x.attrs['units']
+                units = x.attrs['units'] if x.attrs['units'] is not None else ''
             else:
                 units = ''
             if 'annual_mean' in keys:
@@ -545,7 +545,7 @@ class DataArray(xr.DataArray):
                     raise Exception('t_student must be contain "p" key, containing '
                         'an xarray.DataArray with t-student distribution '
                         'probabilities.\nTo obtain t_student distribution '
-                        'probabilities, you can use the "t_distribution_probabilities" function.')
+                        'probabilities, you can use the "t_student_probability" function.')
                 if "treshold" in t_student:
                     if t_student["treshold"] > 1:
                         raise Exception("Treshold must be <= 1")
@@ -777,7 +777,7 @@ class DataArray(xr.DataArray):
                     raise Exception('t_student must be contain "p" key, containing '
                         'an xarray.DataArray with t-student distribution '
                         'probabilities.\nTo obtain t_student distribution '
-                        'probabilities, you can use the "t_distribution_probabilities" function.')
+                        'probabilities, you can use the "t_student_probability" function.')
                 if "treshold" in t_student:
                     if t_student["treshold"] > 1:
                         raise Exception("Treshold must be <= 1")
