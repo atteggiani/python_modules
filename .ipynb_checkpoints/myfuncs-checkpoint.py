@@ -352,6 +352,9 @@ class Dataset(xr.Dataset):
     def seasonal_time_series(self,first_month_num=None,update_attrs=True):
         return seasonal_time_series(self,first_month_num=first_month_num,
                                     update_attrs=update_attrs)
+    
+    def add_evaporation(self):
+        return add_evaporation(self)
 
 class DataArray(xr.DataArray):
     '''
@@ -2755,7 +2758,7 @@ def t_student_probability(x,y,season=None):
 
     Arguments
     ----------
-    data1,data2 : DataArray objects
+    x,y : DataArray objects
        arrays to compute the t-student test on
 
     Parameters
@@ -2789,6 +2792,29 @@ def t_student_probability(x,y,season=None):
     df = n1+n2-2
     p = (1-xr.apply_ufunc(stats.t.cdf,abs(t_stat),df,dask=True))*2
     return DataArray(p)
+
+def add_evaporation(x):
+    '''
+    Function to add the variable "evaporation" to the Dataset.
+    This variable is computed by adding the 2 variables of the dataset "evaporation_flux_from_open_sea" and "evaporation_from_soil_surface".
+
+    Arguments
+    ----------
+    x : Dataset objects
+       Dataset to add the "evaporation" variable to.
+
+    Returns
+    ----------
+    xarray.Dataset
+
+    New Dataset containing the "evaporation" variable.
+    '''
+    
+    variables = ["evaporation_flux_from_open_sea","evaporation_from_soil_surface"]
+    for v in variables:
+        if v not in x.variables: raise Exception('Current Dataset doesn"t include the variable "{}".'.format(v))
+    return x.assign(evaporation=x[variables[0]].where(x[variables[0]] <= 100,0) + 
+                       x[variables[1]].where(x[variables[1]] <= 100,0))
 
 # ============================================================================ #
 # ============================================================================ #
