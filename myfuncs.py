@@ -760,12 +760,23 @@ class DataArray(xr.DataArray):
                     cbticks = np.arange(-230,230+40,40)
         return {'self':self,'levels':levels,'cbticks':cbticks,'cmap':cmap}
 
-    def plotlev(self,t_student=False,**kwargs):
-        ax = plt.axes() if 'ax' not in kwargs else kwargs.pop('ax')
-        yincrease = False if 'yincrease' not in kwargs else kwargs.pop('yincrease')
+    def plotlev(self,
+                title = None,
+                units = None,
+                t_student=False,
+                outpath = None,
+                save_kwargs = None,
+                **contourf_kwargs):
+        ax = plt.axes() if 'ax' not in contourf_kwargs else contourf_kwargs.pop('ax')
+        yincrease = False if 'yincrease' not in contourf_kwargs else contourf_kwargs.pop('yincrease')
+        if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
+        if contourf_kwargs['add_colorbar']==True:
+            if 'cbar_kwargs' not in contourf_kwargs: contourf_kwargs['cbar_kwargs'] = dict()
+            if units is not None:
+                contourf_kwargs['cbar_kwargs']['label']=units
         im=self.plot.contourf(ax=ax,
                     yincrease=yincrease,
-                    **kwargs,
+                    **contourf_kwargs,
                     )
         if isinstance(t_student,bool):
             if t_student:
@@ -806,6 +817,13 @@ class DataArray(xr.DataArray):
         plt.tick_params(axis='y',which='minor',left=False,right=False)
         plt.tick_params(axis='y',which='major',left=True,right=True)
         plt.tick_params(axis='x',which='both',bottom=True,top=True)
+        plt.title(title)
+        if save_kwargs is not None:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
+        else:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight'}
+        if outpath is not None:
+            plt.savefig(outpath, format = 'png',**save_kwargs)
         return im
 
     def _to_contiguous_lon(self):
