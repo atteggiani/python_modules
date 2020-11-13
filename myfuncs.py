@@ -272,43 +272,25 @@ class Dataset(xr.Dataset):
         return coords
 
     def plotall(self,
-                projection = None,
-                outpath = None,
-                names = None,
-                titles = None,
-                statistics=True,
-                nlev=None,
-                save_kwargs = None):
+                outpath = None):
         '''
         Plots all the variables of the Dataset using DataArray.plotvar function.
 
         '''
+        
+        if not os.path.isdir(outpath):
+            raise Exception("outpath needs to be the directory where all the plots will be saved")
+        if "annual_mean" in self.attrs:
+            op = "amean"
+        elif "seasonal_cycle" in self.attrs:
+            op = "seascyc"
+        if "anomalies" in self.attrs:
+            op = "{}.anom".format(op)
 
-        def _check_length(x,def_len):
-            x = [x] if not isinstance(x,list) else x
-            if len(x) > 1:
-                if len(x) != def_len:
-                    raise Exception('All properties must be lists of properties '+
-                                    'values and must have\nlength equal to the '+
-                                    'number of variables in the Dataset')
-                else:
-                    return x
-            else:
-                return x*def_len
-
-        vars=[v for v in self]
-        names = _check_length(names,len(vars))
-        titles = _check_length(titles,len(vars))
-
-        for var,name,tit in zip(self,names,titles):
+        for var_name in self:
+            full_outpath = os.path.join(outpath,".".join((var_name,op,"png")))
             plt.figure()
-            self[var].plotvar(projection = projection,
-                              outpath = outpath,
-                              name = name,
-                              title = tit,
-                              statistics=statistics,
-                              nlev=nlev,
-                              save_kwargs = save_kwargs)
+            self[var_name].plotvar(outpath = full_outpath)
 
     def annual_mean(self,copy=True,update_attrs=True):
         return annual_mean(self,copy=copy,update_attrs=update_attrs)
@@ -1276,6 +1258,23 @@ class Constants:
             mask=from_binary(Constants.greb.input_folder()+'/global.topography.bin',parse=False).squeeze().topo
             mask.data=np.where(mask<=0,False,True)
             return mask
+        
+        def get_exp_name(exp_num):
+            if isinstance(exp_num,str):
+                exp_num = int(exp_num)
+            elif not isinstance(exp_num,int):
+                raise Exception("exp_num must be either an integer or a string")
+            n1 = "exp-{}".format(exp_num)
+            if exp_num in (930,931):
+                n2 = "geoeng.2xCO2"
+            elif exp_num == 932:
+                n2 = "geoeng.4xCO2"
+            elif exp_num == 933:
+                n2 = "geoeng.control-fixed.tsurf.4xCO2"
+            else:
+                raise Exception("exp_num '{}' not supported".format(exp_num))
+            return ".".join((n1,n2))
+
 
     class colormaps:
         def __init__(self):
@@ -1564,7 +1563,6 @@ def check_xarray(x,type=None):
         elif type.lower() == 'dataset': return ds
     return np.logical_or(da,ds)
 
-
 def parse_greb_var(x,update_attrs=True):
     '''
     Corrects GREB model output variables and adds units label
@@ -1806,7 +1804,6 @@ def global_mean(x,copy=True,update_attrs=True):
         return x.average(dim='stacked_lat_lon',weights=weights,keep_attrs=True).squeeze()
     else:
         raise Exception('Impossible to perform global mean, no latitude and longitude dims.')
-
 
 def seasonal_cycle(x,copy=True,update_attrs=True):
     '''
