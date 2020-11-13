@@ -729,9 +729,14 @@ class DataArray(xr.DataArray):
                                          attrs=self.attrs)
             cmap = cm.YlOrRd
             if 'anomalies' in keys:
-                cmap = cmap_tsurf
-                levels = np.linspace(-5,5,nlev)
-                cbticks = np.arange(-5,5+1,1)
+                if 'annual_mean' in keys:
+                    cmap = cm.hsv
+                    levels = np.linspace(-8,0,nlev)
+                    cbticks = np.arange(-8,1,1)
+                elif 'seasonal_cycle' in keys:
+                    cmap = cmap_tsurf
+                    levels = np.linspace(-5,5,nlev)
+                    cbticks = np.arange(-5,5+1,1)
             else:
                 if 'annual_mean' in keys:
                     levels = np.linspace(150,420,nlev)
