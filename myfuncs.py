@@ -272,43 +272,25 @@ class Dataset(xr.Dataset):
         return coords
 
     def plotall(self,
-                projection = None,
-                outpath = None,
-                names = None,
-                titles = None,
-                statistics=True,
-                nlev=None,
-                save_kwargs = None):
+                outpath = None):
         '''
         Plots all the variables of the Dataset using DataArray.plotvar function.
 
         '''
+        
+        if not os.path.isdir(outpath):
+            raise Exception("outpath needs to be the directory where all the plots will be saved")
+        if "annual_mean" in self.attrs:
+            op = "amean"
+        elif "seasonal_cycle" in self.attrs:
+            op = "seascyc"
+        if "anomalies" in self.attrs:
+            op = "{}.anom".format(op)
 
-        def _check_length(x,def_len):
-            x = [x] if not isinstance(x,list) else x
-            if len(x) > 1:
-                if len(x) != def_len:
-                    raise Exception('All properties must be lists of properties '+
-                                    'values and must have\nlength equal to the '+
-                                    'number of variables in the Dataset')
-                else:
-                    return x
-            else:
-                return x*def_len
-
-        vars=[v for v in self]
-        names = _check_length(names,len(vars))
-        titles = _check_length(titles,len(vars))
-
-        for var,name,tit in zip(self,names,titles):
+        for var_name in self:
+            full_outpath = os.path.join(outpath,".".join((var_name,op,"png")))
             plt.figure()
-            self[var].plotvar(projection = projection,
-                              outpath = outpath,
-                              name = name,
-                              title = tit,
-                              statistics=statistics,
-                              nlev=nlev,
-                              save_kwargs = save_kwargs)
+            self[var_name].plotvar(outpath = full_outpath)
 
     def annual_mean(self,copy=True,update_attrs=True):
         return annual_mean(self,copy=copy,update_attrs=update_attrs)
@@ -352,6 +334,9 @@ class Dataset(xr.Dataset):
     def seasonal_time_series(self,first_month_num=None,update_attrs=True):
         return seasonal_time_series(self,first_month_num=first_month_num,
                                     update_attrs=update_attrs)
+    
+    def add_evaporation(self):
+        return add_evaporation(self)
 
 class DataArray(xr.DataArray):
     '''
@@ -744,9 +729,14 @@ class DataArray(xr.DataArray):
                                          attrs=self.attrs)
             cmap = cm.YlOrRd
             if 'anomalies' in keys:
-                cmap = cmap_tsurf
-                levels = np.linspace(-5,5,nlev)
-                cbticks = np.arange(-5,5+1,1)
+                if 'annual_mean' in keys:
+                    cmap = cm.hsv
+                    levels = np.linspace(-8,0,nlev)
+                    cbticks = np.arange(-8,1,1)
+                elif 'seasonal_cycle' in keys:
+                    cmap = cmap_tsurf
+                    levels = np.linspace(-5,5,nlev)
+                    cbticks = np.arange(-5,5+1,1)
             else:
                 if 'annual_mean' in keys:
                     levels = np.linspace(150,420,nlev)
@@ -757,12 +747,23 @@ class DataArray(xr.DataArray):
                     cbticks = np.arange(-230,230+40,40)
         return {'self':self,'levels':levels,'cbticks':cbticks,'cmap':cmap}
 
-    def plotlev(self,t_student=False,**kwargs):
-        ax = plt.axes() if 'ax' not in kwargs else kwargs.pop('ax')
-        yincrease = False if 'yincrease' not in kwargs else kwargs.pop('yincrease')
+    def plotlev(self,
+                title = None,
+                units = None,
+                t_student=False,
+                outpath = None,
+                save_kwargs = None,
+                **contourf_kwargs):
+        ax = plt.axes() if 'ax' not in contourf_kwargs else contourf_kwargs.pop('ax')
+        yincrease = False if 'yincrease' not in contourf_kwargs else contourf_kwargs.pop('yincrease')
+        if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
+        if contourf_kwargs['add_colorbar']==True:
+            if 'cbar_kwargs' not in contourf_kwargs: contourf_kwargs['cbar_kwargs'] = dict()
+            if units is not None:
+                contourf_kwargs['cbar_kwargs']['label']=units
         im=self.plot.contourf(ax=ax,
                     yincrease=yincrease,
-                    **kwargs,
+                    **contourf_kwargs,
                     )
         if isinstance(t_student,bool):
             if t_student:
@@ -803,6 +804,13 @@ class DataArray(xr.DataArray):
         plt.tick_params(axis='y',which='minor',left=False,right=False)
         plt.tick_params(axis='y',which='major',left=True,right=True)
         plt.tick_params(axis='x',which='both',bottom=True,top=True)
+        plt.title(title)
+        if save_kwargs is not None:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
+        else:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight'}
+        if outpath is not None:
+            plt.savefig(outpath, format = 'png',**save_kwargs)
         return im
 
     def _to_contiguous_lon(self):
@@ -1255,6 +1263,23 @@ class Constants:
             mask=from_binary(Constants.greb.input_folder()+'/global.topography.bin',parse=False).squeeze().topo
             mask.data=np.where(mask<=0,False,True)
             return mask
+        
+        def get_exp_name(exp_num):
+            if isinstance(exp_num,str):
+                exp_num = int(exp_num)
+            elif not isinstance(exp_num,int):
+                raise Exception("exp_num must be either an integer or a string")
+            n1 = "exp-{}".format(exp_num)
+            if exp_num in (930,931):
+                n2 = "geoeng.2xCO2"
+            elif exp_num == 932:
+                n2 = "geoeng.4xCO2"
+            elif exp_num == 933:
+                n2 = "geoeng.control-fixed.tsurf.4xCO2"
+            else:
+                raise Exception("exp_num '{}' not supported".format(exp_num))
+            return ".".join((n1,n2))
+
 
     class colormaps:
         def __init__(self):
@@ -1543,7 +1568,6 @@ def check_xarray(x,type=None):
         elif type.lower() == 'dataset': return ds
     return np.logical_or(da,ds)
 
-
 def parse_greb_var(x,update_attrs=True):
     '''
     Corrects GREB model output variables and adds units label
@@ -1785,7 +1809,6 @@ def global_mean(x,copy=True,update_attrs=True):
         return x.average(dim='stacked_lat_lon',weights=weights,keep_attrs=True).squeeze()
     else:
         raise Exception('Impossible to perform global mean, no latitude and longitude dims.')
-
 
 def seasonal_cycle(x,copy=True,update_attrs=True):
     '''
@@ -2755,7 +2778,7 @@ def t_student_probability(x,y,season=None):
 
     Arguments
     ----------
-    data1,data2 : DataArray objects
+    x,y : DataArray objects
        arrays to compute the t-student test on
 
     Parameters
@@ -2789,6 +2812,29 @@ def t_student_probability(x,y,season=None):
     df = n1+n2-2
     p = (1-xr.apply_ufunc(stats.t.cdf,abs(t_stat),df,dask=True))*2
     return DataArray(p)
+
+def add_evaporation(x):
+    '''
+    Function to add the variable "evaporation" to the Dataset.
+    This variable is computed by adding the 2 variables of the dataset "evaporation_flux_from_open_sea" and "evaporation_from_soil_surface".
+
+    Arguments
+    ----------
+    x : Dataset objects
+       Dataset to add the "evaporation" variable to.
+
+    Returns
+    ----------
+    xarray.Dataset
+
+    New Dataset containing the "evaporation" variable.
+    '''
+    
+    variables = ["evaporation_flux_from_open_sea","evaporation_from_soil_surface"]
+    for v in variables:
+        if v not in x.variables: raise Exception('Current Dataset doesn"t include the variable "{}".'.format(v))
+    return x.assign(evaporation=x[variables[0]].where(x[variables[0]] <= 100,0) + 
+                       x[variables[1]].where(x[variables[1]] <= 100,0))
 
 # ============================================================================ #
 # ============================================================================ #

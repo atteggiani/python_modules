@@ -352,6 +352,9 @@ class Dataset(xr.Dataset):
     def seasonal_time_series(self,first_month_num=None,update_attrs=True):
         return seasonal_time_series(self,first_month_num=first_month_num,
                                     update_attrs=update_attrs)
+    
+    def add_evaporation(self):
+        return add_evaporation(self)
 
 class DataArray(xr.DataArray):
     '''
@@ -757,12 +760,23 @@ class DataArray(xr.DataArray):
                     cbticks = np.arange(-230,230+40,40)
         return {'self':self,'levels':levels,'cbticks':cbticks,'cmap':cmap}
 
-    def plotlev(self,t_student=False,**kwargs):
-        ax = plt.axes() if 'ax' not in kwargs else kwargs.pop('ax')
-        yincrease = False if 'yincrease' not in kwargs else kwargs.pop('yincrease')
+    def plotlev(self,
+                title = None,
+                units = None,
+                t_student=False,
+                outpath = None,
+                save_kwargs = None,
+                **contourf_kwargs):
+        ax = plt.axes() if 'ax' not in contourf_kwargs else contourf_kwargs.pop('ax')
+        yincrease = False if 'yincrease' not in contourf_kwargs else contourf_kwargs.pop('yincrease')
+        if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
+        if contourf_kwargs['add_colorbar']==True:
+            if 'cbar_kwargs' not in contourf_kwargs: contourf_kwargs['cbar_kwargs'] = dict()
+            if units is not None:
+                contourf_kwargs['cbar_kwargs']['label']=units
         im=self.plot.contourf(ax=ax,
                     yincrease=yincrease,
-                    **kwargs,
+                    **contourf_kwargs,
                     )
         if isinstance(t_student,bool):
             if t_student:
@@ -803,6 +817,13 @@ class DataArray(xr.DataArray):
         plt.tick_params(axis='y',which='minor',left=False,right=False)
         plt.tick_params(axis='y',which='major',left=True,right=True)
         plt.tick_params(axis='x',which='both',bottom=True,top=True)
+        plt.title(title)
+        if save_kwargs is not None:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
+        else:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight'}
+        if outpath is not None:
+            plt.savefig(outpath, format = 'png',**save_kwargs)
         return im
 
     def _to_contiguous_lon(self):
@@ -2755,7 +2776,7 @@ def t_student_probability(x,y,season=None):
 
     Arguments
     ----------
-    data1,data2 : DataArray objects
+    x,y : DataArray objects
        arrays to compute the t-student test on
 
     Parameters
@@ -2789,6 +2810,29 @@ def t_student_probability(x,y,season=None):
     df = n1+n2-2
     p = (1-xr.apply_ufunc(stats.t.cdf,abs(t_stat),df,dask=True))*2
     return DataArray(p)
+
+def add_evaporation(x):
+    '''
+    Function to add the variable "evaporation" to the Dataset.
+    This variable is computed by adding the 2 variables of the dataset "evaporation_flux_from_open_sea" and "evaporation_from_soil_surface".
+
+    Arguments
+    ----------
+    x : Dataset objects
+       Dataset to add the "evaporation" variable to.
+
+    Returns
+    ----------
+    xarray.Dataset
+
+    New Dataset containing the "evaporation" variable.
+    '''
+    
+    variables = ["evaporation_flux_from_open_sea","evaporation_from_soil_surface"]
+    for v in variables:
+        if v not in x.variables: raise Exception('Current Dataset doesn"t include the variable "{}".'.format(v))
+    return x.assign(evaporation=x[variables[0]].where(x[variables[0]] <= 100,0) + 
+                       x[variables[1]].where(x[variables[1]] <= 100,0))
 
 # ============================================================================ #
 # ============================================================================ #
