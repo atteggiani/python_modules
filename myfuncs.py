@@ -959,17 +959,15 @@ class Constants:
         def streams():
             return ['a','b','c','d','e','f','g','h','i','j']
 
-        @staticmethod
-        def ppm2kgkg():
-            mass_air=0.0289644 #kg/mol
-            mass_CO2=0.0440095 #kg/mol
+        def ppm2kgkg(x):
+            m_air=0.0289644 #kg/mol
+            m_CO2=0.0440095 #kg/mol
             coeff=1E-6*(m_CO2/m_air)
             return x*coeff
 
-        @staticmethod
-        def kgkg2ppm():
-            mass_air=0.0289644 #kg/mol
-            mass_CO2=0.0440095 #kg/mol
+        def kgkg2ppm(x):
+            m_air=0.0289644 #kg/mol
+            m_CO2=0.0440095 #kg/mol
             coeff=1E-6*(m_CO2/m_air)
             return x/coeff
 
