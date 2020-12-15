@@ -1,5 +1,6 @@
 # LIBRARIES
 import xarray as xr
+from importlib import reload
 import numpy as np
 import matplotlib.pyplot as plt
 from cdo import Cdo
@@ -292,8 +293,8 @@ class Dataset(xr.Dataset):
             plt.figure()
             self[var_name].plotvar(outpath = full_outpath)
 
-    def annual_mean(self,copy=True,update_attrs=True):
-        return annual_mean(self,copy=copy,update_attrs=update_attrs)
+    def annual_mean(self,num=None,copy=True,update_attrs=True):
+        return annual_mean(self,num=num,copy=copy,update_attrs=update_attrs)
 
     def seasonal_cycle(self,copy=True,update_attrs=True):
             return seasonal_cycle(self,copy=copy,update_attrs=update_attrs)
@@ -425,7 +426,7 @@ class DataArray(xr.DataArray):
                 outpath = None,
                 name = None,
                 title = None,
-                statistics=True,
+                statistics='all',
                 t_student=False,
                 nlev=None,
                 coast_kwargs = None,
@@ -513,10 +514,23 @@ class DataArray(xr.DataArray):
         if (self.name == 'tocean'):
             plt.gca().add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m'),
                                   **land_kwargs)
-        if statistics:
-            txt = ('gmean = {:.3f}'+'\n'+'rms = {:.3f}').format(self.global_mean().values,self.rms().values)
-            plt.text(1.05,1,txt,verticalalignment='top',horizontalalignment='right',
-                     transform=plt.gca().transAxes,fontsize=6)
+        if statistics != 'none':
+            if statistics == 'all':
+                gm=self.global_mean().values
+                rms=self.rms().values
+                txt = ('gmean = {:.3g}  |  rmse = {:.3g}').format(gm,rms)
+                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                     transform=plt.gca().transAxes,fontsize=12, weight='bold')
+            elif statistics == 'gmean':
+                gm=self.global_mean().values
+                txt = ('gmean = {:.3g}').format(gm)
+                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                     transform=plt.gca().transAxes,fontsize=12, weight='bold')
+            elif statistics == 'rms':
+                rms=self.rms().values
+                txt = ('rmse = {:.3g}').format(rms)
+                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                     transform=plt.gca().transAxes,fontsize=12, weight='bold')         
         if isinstance(t_student,bool):
             if t_student:
                 raise Exception('t_student must be False, or equal to either a dictionary or an '
@@ -525,12 +539,16 @@ class DataArray(xr.DataArray):
             if check_xarray(t_student,"DataArray"):
                 _check_shapes(t_student,self)
                 t_student = {"p":t_student}
+            elif isinstance(t_student,np.ndarray):
+                t_student = {"p":xr.DataArray(data=t_student,dims = ["latitude","longitude"], coords=[Constants.um.latitude,Constants.um.longitude])}
             if isinstance(t_student,dict):
                 if "p" not in t_student:
                     raise Exception('t_student must be contain "p" key, containing '
                         'an xarray.DataArray with t-student distribution '
                         'probabilities.\nTo obtain t_student distribution '
                         'probabilities, you can use the "t_student_probability" function.')
+                elif isinstance(t_student["p"],np.ndarray):
+                    t_student["p"] = xr.DataArray(data=t_student["p"],dims = ["latitude","longitude"], coords=[Constants.um.latitude,Constants.um.longitude])
                 if "treshold" in t_student:
                     if t_student["treshold"] > 1:
                         raise Exception("Treshold must be <= 1")
@@ -543,10 +561,11 @@ class DataArray(xr.DataArray):
                         'xarray.DataArray containing t-student distribution probabilities.')
             p=t_student["p"]
             a=t_student["treshold"]
-            DataArray(p.where(p<a).where(p>=a,1))._to_contiguous_lon().plot.contourf(
+            DataArray(p.where(p<a,0).where(p>=a,1))._to_contiguous_lon().plot.contourf(
                                                 ax=plt.gca(),
                                                 transform=ccrs.PlateCarree(),
-                                                hatches=[t_student['hatches']],
+                                                levels=np.linspace(0,1,3),
+                                                hatches=['',t_student['hatches']],
                                                 alpha=0,
                                                 add_colorbar=False,
                                                 )
@@ -562,8 +581,8 @@ class DataArray(xr.DataArray):
 
         '''
 
-        cmap_tsurf=Constants.colormaps.Div_tsurf()
-        cmap_precip=Constants.colormaps.Div_precip()
+        cmap_tsurf=Constants.colormaps.Div_tsurf
+        cmap_precip=Constants.colormaps.Div_precip
         keys=self.attrs.keys()
         name=self.name
         if nlev is None: nlev=100
@@ -753,16 +772,18 @@ class DataArray(xr.DataArray):
                 t_student=False,
                 outpath = None,
                 save_kwargs = None,
+                um_levs=True,
                 **contourf_kwargs):
         ax = plt.axes() if 'ax' not in contourf_kwargs else contourf_kwargs.pop('ax')
-        yincrease = False if 'yincrease' not in contourf_kwargs else contourf_kwargs.pop('yincrease')
         if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
         if contourf_kwargs['add_colorbar']==True:
             if 'cbar_kwargs' not in contourf_kwargs: contourf_kwargs['cbar_kwargs'] = dict()
             if units is not None:
                 contourf_kwargs['cbar_kwargs']['label']=units
+        yscale="log" if um_levs else "linear"    
         im=self.plot.contourf(ax=ax,
-                    yincrease=yincrease,
+                    yincrease=False,
+                    yscale=yscale,
                     **contourf_kwargs,
                     )
         if isinstance(t_student,bool):
@@ -773,12 +794,16 @@ class DataArray(xr.DataArray):
             if check_xarray(t_student,"DataArray"):
                 _check_shapes(t_student,self)
                 t_student = {"p":t_student}
+            elif isinstance(t_student,np.ndarray):
+                t_student = {"p":xr.DataArray(data=t_student,dims = ["latitude","longitude"], coords=[Constants.um.latitude,Constants.um.longitude])}
             if isinstance(t_student,dict):
                 if "p" not in t_student:
                     raise Exception('t_student must be contain "p" key, containing '
                         'an xarray.DataArray with t-student distribution '
                         'probabilities.\nTo obtain t_student distribution '
                         'probabilities, you can use the "t_student_probability" function.')
+                elif isinstance(t_student["p"],np.ndarray):
+                    t_student["p"] = xr.DataArray(data=t_student["p"],dims = ["latitude","longitude"], coords=[Constants.um.latitude,Constants.um.longitude])
                 if "treshold" in t_student:
                     if t_student["treshold"] > 1:
                         raise Exception("Treshold must be <= 1")
@@ -791,16 +816,20 @@ class DataArray(xr.DataArray):
                         'xarray.DataArray containing t-student distribution probabilities.')
             p=t_student["p"]
             a=t_student["treshold"]
-            DataArray(p.where(p<a).where(p>=a,1)).plot.contourf(
-                                                ax=ax,
-                                                yincrease=yincrease,
-                                                hatches=[t_student['hatches']],
+            DataArray(p.where(p<a,0).where(p>=a,1)).plot.contourf(
+                                                yincrease=False,
+                                                yscale=yscale,
+                                                levels=np.linspace(0,1,3),
+                                                hatches=['',t_student['hatches']],
                                                 alpha=0,
                                                 add_colorbar=False,
                                                 )
         plt.xlabel("")
         plt.xticks(ticks=np.arange(-90,90+30,30),labels=["90S","60S","30S","0","30N","60N","90N"])
         plt.gca().xaxis.set_minor_locator(MultipleLocator(10))
+        if um_levs: 
+            plt.yticks(ticks=[1000,800,600,400,200,50],labels=["1000","800","600","400","200","50"])
+            plt.ylim([1000,50])
         plt.tick_params(axis='y',which='minor',left=False,right=False)
         plt.tick_params(axis='y',which='major',left=True,right=True)
         plt.tick_params(axis='x',which='both',bottom=True,top=True)
@@ -829,8 +858,8 @@ class DataArray(xr.DataArray):
             val=self.isel({lon:[0,-1]}).mean(lon)
             return xr.concat([val.assign_coords(**{lon:0.}),self,val.assign_coords(**{lon:360.})], dim=lon)
 
-    def annual_mean(self,copy=True,update_attrs=True):
-        return annual_mean(self,copy=copy,update_attrs=update_attrs)
+    def annual_mean(self,num=None,copy=True,update_attrs=True):
+        return annual_mean(self,num=num,copy=copy,update_attrs=update_attrs)
 
     def seasonal_cycle(self,copy=True,update_attrs=True):
         return seasonal_cycle(self,copy=copy,update_attrs=update_attrs)
@@ -890,6 +919,30 @@ class Constants:
         pass
 
     class um:
+        longitude = np.array([  0.  ,   3.75,   7.5 ,  11.25,  15.  ,  18.75,  22.5 ,  26.25,
+        30.  ,  33.75,  37.5 ,  41.25,  45.  ,  48.75,  52.5 ,  56.25,
+        60.  ,  63.75,  67.5 ,  71.25,  75.  ,  78.75,  82.5 ,  86.25,
+        90.  ,  93.75,  97.5 , 101.25, 105.  , 108.75, 112.5 , 116.25,
+       120.  , 123.75, 127.5 , 131.25, 135.  , 138.75, 142.5 , 146.25,
+       150.  , 153.75, 157.5 , 161.25, 165.  , 168.75, 172.5 , 176.25,
+       180.  , 183.75, 187.5 , 191.25, 195.  , 198.75, 202.5 , 206.25,
+       210.  , 213.75, 217.5 , 221.25, 225.  , 228.75, 232.5 , 236.25,
+       240.  , 243.75, 247.5 , 251.25, 255.  , 258.75, 262.5 , 266.25,
+       270.  , 273.75, 277.5 , 281.25, 285.  , 288.75, 292.5 , 296.25,
+       300.  , 303.75, 307.5 , 311.25, 315.  , 318.75, 322.5 , 326.25,
+       330.  , 333.75, 337.5 , 341.25, 345.  , 348.75, 352.5 , 356.25],
+       dtype=np.float32)
+        
+        latitude = np.array([-90. , -87.5, -85. , -82.5, -80. , -77.5, -75. , -72.5, -70. ,
+       -67.5, -65. , -62.5, -60. , -57.5, -55. , -52.5, -50. , -47.5,
+       -45. , -42.5, -40. , -37.5, -35. , -32.5, -30. , -27.5, -25. ,
+       -22.5, -20. , -17.5, -15. , -12.5, -10. ,  -7.5,  -5. ,  -2.5,
+         0. ,   2.5,   5. ,   7.5,  10. ,  12.5,  15. ,  17.5,  20. ,
+        22.5,  25. ,  27.5,  30. ,  32.5,  35. ,  37.5,  40. ,  42.5,
+        45. ,  47.5,  50. ,  52.5,  55. ,  57.5,  60. ,  62.5,  65. ,
+        67.5,  70. ,  72.5,  75. ,  77.5,  80. ,  82.5,  85. ,  87.5,
+        90. ], dtype=np.float32)
+
         def months(n_char=2):
             if n_char == 2:
                 return ["ja","fb","mr","ar","my","jn","jl","ag","sp","ot","nv","dc"]
@@ -1284,8 +1337,8 @@ class Constants:
     class colormaps:
         def __init__(self):
             pass
-
-        def add_white(colormap,name=None):
+        
+        def add_white_inbetween(colormap,name=None):
             if name is None:
                 name = 'new_'+colormap.name
             cm0=colormap
@@ -1296,21 +1349,30 @@ class Constants:
             cols1=np.vstack([col1,w1,w2,col2])
             return colors.LinearSegmentedColormap.from_list(name, cols1)
 
-        @staticmethod
-        def Div_tsurf():
-            return Constants.colormaps.add_white(cm.Spectral_r,name='Div_tsurf')
+        def add_white_start(colormap,name=None):
+            if name is None:
+                name = 'new_'+colormap.name
+            col=colormap(np.linspace(0,1,200))
+            w=np.array(list(map(lambda x: np.linspace(1,x,30),col[0]))).transpose()
+            cols=np.vstack([w,col])
+            return colors.LinearSegmentedColormap.from_list(name, cols)   
 
-        @staticmethod
-        def Div_tsurf_r():
-            return Constants.colormaps.Div_tsurf().reversed()
+        def add_white_end(colormap,name=None):
+            if name is None:
+                name = 'new_'+colormap.name
+            col=colormap(np.linspace(0,1,200))
+            w=np.array(list(map(lambda x: np.linspace(x,1,30),col[-1]))).transpose()
+            cols=np.vstack([col,w])
+            return colors.LinearSegmentedColormap.from_list(name, cols) 
 
-        @staticmethod
-        def Div_precip():
-            return Constants.colormaps.add_white(cm.twilight_shifted_r,name='Div_precip')
-
-        @staticmethod
-        def Div_precip_r():
-            return Constants.colormaps.Div_precip().reversed()
+        Div_tsurf = add_white_inbetween(cm.Spectral_r,name='Div_tsurf')
+        Div_tsurf_r = Div_tsurf.reversed()
+        Div_precip = add_white_inbetween(cm.twilight_shifted_r,name='Div_precip')
+        Div_precip_r = Div_precip.reversed()
+        Seq_tsurf_hot = add_white_start(cm.YlOrRd, name="Seq_tsurf_hot")
+        Seq_tsurf_hot_r = Seq_tsurf_hot.reversed()
+        Seq_tsurf_cold = add_white_end(cm.YlGnBu, name="Seq_tsurf_cold")
+        Seq_tsurf_cold_r = Seq_tsurf_cold.reversed()
 
     class srex_regions:
         def __init__(self):
@@ -1726,7 +1788,7 @@ def rms(x,copy=True,update_attrs=True):
         attrs['rms'] = 'Computed root mean square'
     return func(xr.apply_ufunc(lambda x: np.sqrt(x),gm,keep_attrs=True),attrs=attrs)
 
-def annual_mean(x,copy=True,update_attrs=True):
+def annual_mean(x,num=None,copy=True,update_attrs=True):
     '''
     Compute the mean over 'time' dimension.
 
@@ -1737,6 +1799,10 @@ def annual_mean(x,copy=True,update_attrs=True):
 
     Parameters
     ----------
+    num : int
+        If set to None (default), compute the mean over all the time coordinate.
+        Otherwise it takes into account only the last "num_year" timesteps.
+        If num years > len(time coordinate), the mean gets computed over all the time coordinate.
     copy : Bool
        set to True (default) if you want to return a copy of the argument in
        input; set to False if you want to overwrite the input argument.
@@ -1757,10 +1823,15 @@ def annual_mean(x,copy=True,update_attrs=True):
     if 'seasonal_cycle' in x.attrs:
         raise Exception('Cannot perform annual mean on a variable on which seasonal cycle has already been performed')
     if copy: x = x.copy()
+    if num is None: 
+        num = len(x['time'])
+    elif num > len(x['time']): 
+        num = len(x['time'])
     if update_attrs:
-        x.attrs['annual_mean'] = 'Computed annual mean'
+        x.attrs['annual_mean'] = 'Computed annual mean of {} timesteps'.format(num)
         if check_xarray(x,'Dataset'):
-            for var in x: x._variables[var].attrs['annual_mean'] = 'Computed annual mean'
+            for var in x: x._variables[var].attrs['annual_mean'] = 'Computed annual mean of {} timesteps'.format(num)
+    x = x.isel(time=slice(-num,None))
     return x.mean(dim='time',keep_attrs=True).squeeze()
 
 def global_mean(x,copy=True,update_attrs=True):
@@ -1922,7 +1993,9 @@ def anomalies(x,x_base=None,copy=True,update_attrs=True):
                     x_base = x_base.to_celsius(copy=False)
     else:
         if not check_xarray(x_base): exception_xarray()
-    if 'annual_mean' in x.attrs: x_base = annual_mean(x_base)
+    if 'annual_mean' in x.attrs: 
+        num= x.attrs['annual_mean'].split()[4]
+        x_base = annual_mean(x_base,num=num)
     if 'seasonal_cycle' in x.attrs: x_base = seasonal_cycle(x_base)
     if 'global_mean' in x.attrs: x_base = global_mean(x_base)
     if 'rms' in x.attrs: x_base = rms(x_base)
@@ -2795,23 +2868,19 @@ def t_student_probability(x,y,season=None):
     '''
     if season is not None:
         if season in ['DJF','MAM','JJA','SON']:
-            x = x.isel(time=x.groupby('time.season').groups[season])
-            y = y.isel(time=y.groupby('time.season').groups[season])
+            x1 = x.isel(time=x.groupby('time.season').groups[season])
+            y1 = y.isel(time=y.groupby('time.season').groups[season])
         else:
             raise Exception("season must be a value among 'DJF','MAM','JJA' and 'SON'.")
-    x=x.groupby('time.year').mean('time')
-    y=y.groupby('time.year').mean('time')
-    dim='year'
-    m1,m2=x.mean(dim),y.mean(dim)
-    std1,std2 = x.std(dim,ddof=1),y.std(dim,ddof=1)
-    ind1,ind2 = x.dims.index(dim),y.dims.index(dim)
-    n1,n2 = x.shape[ind1],x.shape[ind1]
-    se1,se2 = std1/np.sqrt(n1), std2/np.sqrt(n2)
-    sed = np.sqrt(se1**2.0 + se2**2.0)
-    t_stat = (m1 - m2)/sed
-    df = n1+n2-2
-    p = (1-xr.apply_ufunc(stats.t.cdf,abs(t_stat),df,dask=True))*2
-    return DataArray(p)
+    x1=x.groupby('time.year').mean('time')
+    y1=y.groupby('time.year').mean('time')
+    p=stats.ttest_ind(x1,y1,nan_policy="omit").pvalue
+    p[np.where(np.isnan(p))]=1
+    dims=list(x.dims)
+    dims.remove('time')
+    coords=[x[a].values for a in dims]
+    p=DataArray(data=p,dims=dims,coords=coords)
+    return p
 
 def add_evaporation(x):
     '''
