@@ -261,7 +261,7 @@ class Dataset(xr.Dataset):
                 break
             count+=1
         if count == 3:
-            raise Exception("Latitude coordinate could not be understood")
+            coords=[None]
         count=0
         for l in lons:
             if l in self.dims:
@@ -269,7 +269,7 @@ class Dataset(xr.Dataset):
                 break
             count+=1
         if count == 3:
-            raise Exception("Longitude coordinate could not be understood")
+            coords.append(None)
         return coords
 
     def plotall(self,
@@ -411,7 +411,7 @@ class DataArray(xr.DataArray):
                 break
             count+=1
         if count == 3:
-            raise Exception("Latitude coordinate could not be understood")
+            coords=[None]
         count=0
         for l in lons:
             if l in self.dims:
@@ -419,7 +419,7 @@ class DataArray(xr.DataArray):
                 break
             count+=1
         if count == 3:
-            raise Exception("Longitude coordinate could not be understood")
+            coords.append(None)
         return coords
 
     def plotvar(self, projection = None,
@@ -774,6 +774,17 @@ class DataArray(xr.DataArray):
                 save_kwargs = None,
                 um_levs=True,
                 **contourf_kwargs):
+        if ("latitude" in self.dims) or ("latitude_0" in self.dims) or ("lat" in self.dims):
+            core_dim="lat"
+        elif  ("longitude" in self.dims) or ("longitude_0" in self.dims) or ("lon" in self.dims):
+            core_dim="lon"
+            self = self._to_contiguous_lon()
+            # lon = self.get_spatial_coords()[1]
+            # l=len(self[lon])
+            # self = self._to_contiguous_lon().roll({lon:int(l)/2)})  
+            # 
+            # .assign_coords({lon:np.linspace(-180,180,l)}) TO MODIFY!!!  ASSIGN NEW COORDINATES (-180 to 180)
+
         ax = plt.axes() if 'ax' not in contourf_kwargs else contourf_kwargs.pop('ax')
         if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
         if contourf_kwargs['add_colorbar']==True:
@@ -781,6 +792,7 @@ class DataArray(xr.DataArray):
             if units is not None:
                 contourf_kwargs['cbar_kwargs']['label']=units
         yscale="log" if um_levs else "linear"    
+            
         im=self.plot.contourf(ax=ax,
                     yincrease=False,
                     yscale=yscale,
@@ -816,17 +828,29 @@ class DataArray(xr.DataArray):
                         'xarray.DataArray containing t-student distribution probabilities.')
             p=t_student["p"]
             a=t_student["treshold"]
-            DataArray(p.where(p<a,0).where(p>=a,1)).plot.contourf(
-                                                yincrease=False,
-                                                yscale=yscale,
-                                                levels=np.linspace(0,1,3),
-                                                hatches=['',t_student['hatches']],
-                                                alpha=0,
-                                                add_colorbar=False,
-                                                )
+            P=p.where(p<a,0).where(p>=a,1)
+            if core_dim == "lon": 
+                P = P._to_contiguous_lon()
+                # P = P._to_contiguous_lon().roll({lon:int(len(P[lon])/2)})
+            DataArray(P).plot.contourf(
+                                        yincrease=False,
+                                        yscale=yscale,
+                                        levels=np.linspace(0,1,3),
+                                        hatches=['',t_student['hatches']],
+                                        alpha=0,
+                                        add_colorbar=False,
+                                        )
         plt.xlabel("")
-        plt.xticks(ticks=np.arange(-90,90+30,30),labels=["90S","60S","30S","0","30N","60N","90N"])
-        plt.gca().xaxis.set_minor_locator(MultipleLocator(10))
+        if core_dim == "lat":
+            plt.xticks(ticks=np.arange(-90,90+30,30),
+                       labels=["90S","60S","30S","0","30N","60N","90N"])
+            plt.gca().xaxis.set_minor_locator(MultipleLocator(10))
+        elif core_dim == "lon":
+            # plt.xticks(ticks=np.arange(-180,180+60,60),
+            #            labels=["180W","120W","60W","0","60E","120E","180E"])
+            plt.xticks(ticks=np.arange(0,360+60,60),
+                       labels=["{}°".format(i) for i in range(0,360+60,60)])
+            plt.gca().xaxis.set_minor_locator(MultipleLocator(10))
         if um_levs: 
             plt.yticks(ticks=[1000,800,600,400,200,50],labels=["1000","800","600","400","200","50"])
             plt.ylim([1000,50])
@@ -847,7 +871,7 @@ class DataArray(xr.DataArray):
         Function to close the longitude coord (for plotting)
 
         '''
-        lat,lon=self.get_spatial_coords()
+        lon=self.get_spatial_coords()[1]
         if (0 in self[lon]) and (360 in self[lon]):
             return
         elif (0 in self[lon]):
