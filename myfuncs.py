@@ -778,13 +778,12 @@ class DataArray(xr.DataArray):
             core_dim="lat"
         elif  ("longitude" in self.dims) or ("longitude_0" in self.dims) or ("lon" in self.dims):
             core_dim="lon"
-            self = self._to_contiguous_lon()
-            # lon = self.get_spatial_coords()[1]
-            # l=len(self[lon])
-            # self = self._to_contiguous_lon().roll({lon:int(l)/2)})  
-            # 
-            # .assign_coords({lon:np.linspace(-180,180,l)}) 
-            #TO MODIFY!!!  ASSIGN NEW COORDINATES (-180 to 180)
+            lon = self.get_spatial_coords()[1]
+            l=len(self[lon])
+            self = self.roll({lon:int(l/2)})
+            oldlon=self[lon]
+            newlon=oldlon.where(oldlon < 180, oldlon-360)
+            self=self.assign_coords({lon:newlon})._to_contiguous_lon()
 
         ax = plt.axes() if 'ax' not in contourf_kwargs else contourf_kwargs.pop('ax')
         if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
@@ -831,8 +830,7 @@ class DataArray(xr.DataArray):
             a=t_student["treshold"]
             P=p.where(p<a,0).where(p>=a,1)
             if core_dim == "lon": 
-                P = P._to_contiguous_lon()
-                # P = P._to_contiguous_lon().roll({lon:int(len(P[lon])/2)})
+                P = P.roll({lon:int(l/2)}).assign_coords({lon:newlon})._to_contiguous_lon()
             DataArray(P).plot.contourf(
                                         yincrease=False,
                                         yscale=yscale,
@@ -847,10 +845,10 @@ class DataArray(xr.DataArray):
                        labels=["90S","60S","30S","0","30N","60N","90N"])
             plt.gca().xaxis.set_minor_locator(MultipleLocator(10))
         elif core_dim == "lon":
-            # plt.xticks(ticks=np.arange(-180,180+60,60),
-            #            labels=["180W","120W","60W","0","60E","120E","180E"])
-            plt.xticks(ticks=np.arange(0,360+60,60),
-                       labels=["{}°".format(i) for i in range(0,360+60,60)])
+            plt.xticks(ticks=np.arange(-180,180+60,60),
+                       labels=["180W","120W","60W","0","60E","120E","180E"])
+            # plt.xticks(ticks=np.arange(0,360+60,60),
+            #            labels=["{}°".format(i) for i in range(0,360+60,60)])
             plt.gca().xaxis.set_minor_locator(MultipleLocator(10))
         if um_levs: 
             plt.yticks(ticks=[1000,800,600,400,200,50],labels=["1000","800","600","400","200","50"])
@@ -873,15 +871,26 @@ class DataArray(xr.DataArray):
 
         '''
         lon=self.get_spatial_coords()[1]
-        if (0 in self[lon]) and (360 in self[lon]):
-            return
-        elif (0 in self[lon]):
-            return xr.concat([self, self.isel({lon:0}).assign_coords(**{lon:360.})], dim=lon)
-        elif (360 in self[lon]):
-            return xr.concat([self.isel({lon:360}).assign_coords(**{lon:0.}), self], dim=lon)
+        if np.all(self[lon]>=0):
+            if (0 in self[lon]) and (360 in self[lon]):
+                return
+            elif (0 in self[lon]):
+                return xr.concat([self, self.isel({lon:0}).assign_coords({lon:360.})], dim=lon)
+            elif (360 in self[lon]):
+                return xr.concat([self.isel({lon:360}).assign_coords({lon:0.}), self], dim=lon)
+            else:
+                val=self.isel({lon:[0,-1]}).mean(lon)
+                return xr.concat([val.assign_coords({lon:0.}),self,val.assign_coords({lon:360.})], dim=lon)
         else:
-            val=self.isel({lon:[0,-1]}).mean(lon)
-            return xr.concat([val.assign_coords(**{lon:0.}),self,val.assign_coords(**{lon:360.})], dim=lon)
+            if (-180 in self[lon]) and (180 in self[lon]):
+                return
+            elif (-180 in self[lon]):
+                return xr.concat([self, self.isel({lon:-180}).assign_coords({lon:180.})], dim=lon)
+            elif (180 in self[lon]):
+                return xr.concat([self.isel({lon:180}).assign_coords({lon:-180.}), self], dim=lon)
+            else:
+                val=self.isel({lon:[0,-1]}).mean(lon)
+                return xr.concat([val.assign_coords({lon:-180.}),self,val.assign_coords({lon:180.})], dim=lon)    
 
     def annual_mean(self,num=None,copy=True,update_attrs=True):
         return annual_mean(self,num=num,copy=copy,update_attrs=update_attrs)
