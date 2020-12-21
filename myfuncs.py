@@ -581,8 +581,8 @@ class DataArray(xr.DataArray):
 
         '''
 
-        cmap_tsurf=Constants.colormaps.Div_tsurf
-        cmap_precip=Constants.colormaps.Div_precip
+        cmap_tsurf=Constants.colormaps.div_tsurf
+        cmap_precip=Constants.colormaps.div_precip
         keys=self.attrs.keys()
         name=self.name
         if nlev is None: nlev=100
@@ -772,7 +772,6 @@ class DataArray(xr.DataArray):
                 t_student=False,
                 outpath = None,
                 save_kwargs = None,
-                um_levs=True,
                 **contourf_kwargs):
         if ("latitude" in self.dims) or ("latitude_0" in self.dims) or ("lat" in self.dims):
             core_dim="lat"
@@ -785,16 +784,24 @@ class DataArray(xr.DataArray):
             newlon=oldlon.where(oldlon < 180, oldlon-360)
             self=self.assign_coords({lon:newlon})._to_contiguous_lon()
 
+        if "pressure" in self.dims:
+            vertical_levs = "pressure"
+        elif "model_level_number" in self.dims: 
+            vertical_levs = "um_levs"
+        else:
+            vertical_levs = None
+
         ax = plt.axes() if 'ax' not in contourf_kwargs else contourf_kwargs.pop('ax')
         if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
         if contourf_kwargs['add_colorbar']==True:
             if 'cbar_kwargs' not in contourf_kwargs: contourf_kwargs['cbar_kwargs'] = dict()
             if units is not None:
                 contourf_kwargs['cbar_kwargs']['label']=units
-        yscale="log" if um_levs else "linear"    
+        yscale = "log" if vertical_levs == "pressure" else "linear"   
+        yincrease = False if vertical_levs == "um_levs" else True
             
         im=self.plot.contourf(ax=ax,
-                    yincrease=False,
+                    yincrease=yincrease,
                     yscale=yscale,
                     **contourf_kwargs,
                     )
@@ -847,12 +854,15 @@ class DataArray(xr.DataArray):
         elif core_dim == "lon":
             plt.xticks(ticks=np.arange(-180,180+60,60),
                        labels=["180W","120W","60W","0","60E","120E","180E"])
-            # plt.xticks(ticks=np.arange(0,360+60,60),
-            #            labels=["{}°".format(i) for i in range(0,360+60,60)])
             plt.gca().xaxis.set_minor_locator(MultipleLocator(10))
-        if um_levs: 
+        if vertical_levs=="pressure": 
             plt.yticks(ticks=[1000,800,600,400,200,50],labels=["1000","800","600","400","200","50"])
             plt.ylim([1000,50])
+            # plt.ylabel("Pressure")
+        elif vertical_levs=="um_levs": 
+            plt.ylim([1,38])    
+            plt.yticks(ticks=np.arange(1,38,5))
+            plt.ylabel("Model level number")
         plt.tick_params(axis='y',which='minor',left=False,right=False)
         plt.tick_params(axis='y',which='major',left=True,right=True)
         plt.tick_params(axis='x',which='both',bottom=True,top=True)
@@ -875,9 +885,9 @@ class DataArray(xr.DataArray):
             if (0 in self[lon]) and (360 in self[lon]):
                 return
             elif (0 in self[lon]):
-                return xr.concat([self, self.isel({lon:0}).assign_coords({lon:360.})], dim=lon)
+                return xr.concat([self, self.sel({lon:0}).assign_coords({lon:360.})], dim=lon)
             elif (360 in self[lon]):
-                return xr.concat([self.isel({lon:360}).assign_coords({lon:0.}), self], dim=lon)
+                return xr.concat([self.sel({lon:360}).assign_coords({lon:0.}), self], dim=lon)
             else:
                 val=self.isel({lon:[0,-1]}).mean(lon)
                 return xr.concat([val.assign_coords({lon:0.}),self,val.assign_coords({lon:360.})], dim=lon)
@@ -885,9 +895,9 @@ class DataArray(xr.DataArray):
             if (-180 in self[lon]) and (180 in self[lon]):
                 return
             elif (-180 in self[lon]):
-                return xr.concat([self, self.isel({lon:-180}).assign_coords({lon:180.})], dim=lon)
+                return xr.concat([self, self.sel({lon:-180}).assign_coords({lon:180.})], dim=lon)
             elif (180 in self[lon]):
-                return xr.concat([self.isel({lon:180}).assign_coords({lon:-180.}), self], dim=lon)
+                return xr.concat([self.sel({lon:180}).assign_coords({lon:-180.}), self], dim=lon)
             else:
                 val=self.isel({lon:[0,-1]}).mean(lon)
                 return xr.concat([val.assign_coords({lon:-180.}),self,val.assign_coords({lon:180.})], dim=lon)    
@@ -1404,14 +1414,14 @@ class Constants:
             cols=np.vstack([col,w])
             return colors.LinearSegmentedColormap.from_list(name, cols) 
 
-        Div_tsurf = add_white_inbetween(cm.Spectral_r,name='Div_tsurf')
-        Div_tsurf_r = Div_tsurf.reversed()
-        Div_precip = add_white_inbetween(cm.twilight_shifted_r,name='Div_precip')
-        Div_precip_r = Div_precip.reversed()
-        Seq_tsurf_hot = add_white_start(cm.YlOrRd, name="Seq_tsurf_hot")
-        Seq_tsurf_hot_r = Seq_tsurf_hot.reversed()
-        Seq_tsurf_cold = add_white_end(cm.YlGnBu, name="Seq_tsurf_cold")
-        Seq_tsurf_cold_r = Seq_tsurf_cold.reversed()
+        div_tsurf = add_white_inbetween(cm.Spectral_r,name='div_tsurf')
+        div_tsurf_r = div_tsurf.reversed()
+        div_precip = add_white_inbetween(cm.twilight_shifted_r,name='div_precip')
+        div_precip_r = div_precip.reversed()
+        seq_tsurf_hot = add_white_start(cm.YlOrRd, name="seq_tsurf_hot")
+        seq_tsurf_hot_r = seq_tsurf_hot.reversed()
+        seq_tsurf_cold = add_white_end(cm.YlGnBu, name="seq_tsurf_cold")
+        seq_tsurf_cold_r = seq_tsurf_cold.reversed()
 
     class srex_regions:
         def __init__(self):
@@ -2944,6 +2954,12 @@ def add_evaporation(x):
     return x.assign(evaporation=x[variables[0]].where(x[variables[0]] <= 100,0) + 
                        x[variables[1]].where(x[variables[1]] <= 100,0))
 
+def open_dataarray(x,**open_dataarray_kwargs):
+    '''
+    Function analogous to xarray.open_dataarray which wraps the result in the custom DataArray class 
+    '''
+
+    return DataArray(xr.open_dataarray(x,**open_dataarray_kwargs))
 # ============================================================================ #
 # ============================================================================ #
 # ============================================================================ #
