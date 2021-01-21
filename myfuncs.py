@@ -773,6 +773,7 @@ class DataArray(xr.DataArray):
                 outpath = None,
                 save_kwargs = None,
                 **contourf_kwargs):
+
         if ("latitude" in self.dims) or ("latitude_0" in self.dims) or ("lat" in self.dims):
             core_dim="lat"
         elif  ("longitude" in self.dims) or ("longitude_0" in self.dims) or ("lon" in self.dims):
@@ -866,6 +867,7 @@ class DataArray(xr.DataArray):
         plt.tick_params(axis='y',which='minor',left=False,right=False)
         plt.tick_params(axis='y',which='major',left=True,right=True)
         plt.tick_params(axis='x',which='both',bottom=True,top=True)
+        if title is None: title=self.name
         plt.title(title)
         if save_kwargs is not None:
             save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
