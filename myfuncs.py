@@ -296,6 +296,9 @@ class Dataset(xr.Dataset):
     def annual_mean(self,num=None,copy=True,update_attrs=True):
         return annual_mean(self,num=num,copy=copy,update_attrs=update_attrs)
 
+    def annual_cycle(self,num=None,copy=True,update_attrs=True):
+        return annual_cycle(self,num=num,copy=copy,update_attrs=update_attrs)
+
     def seasonal_cycle(self,copy=True,update_attrs=True):
             return seasonal_cycle(self,copy=copy,update_attrs=update_attrs)
 
@@ -906,7 +909,10 @@ class DataArray(xr.DataArray):
 
     def annual_mean(self,num=None,copy=True,update_attrs=True):
         return annual_mean(self,num=num,copy=copy,update_attrs=update_attrs)
-
+    
+    def annual_cycle(self,num=None,copy=True,update_attrs=True):
+        return annual_cycle(self,num=num,copy=copy,update_attrs=update_attrs)
+    
     def seasonal_cycle(self,copy=True,update_attrs=True):
         return seasonal_cycle(self,copy=copy,update_attrs=update_attrs)
 
@@ -1885,6 +1891,54 @@ def annual_mean(x,num=None,copy=True,update_attrs=True):
     x = x.isel(time=slice(-num,None))
     return x.mean(dim='time',keep_attrs=True).squeeze()
 
+def annual_cycle(x,num=None,copy=True,update_attrs=True):
+    '''
+    Compute the annual cycle over 'time' dimension.
+
+    Arguments
+    ----------
+    x : xarray.Dataset or xarray.DataArray object
+       array to compute the annual mean on
+
+    Parameters
+    ----------
+    num : int
+        If set to None (default), compute the annual cycle over all the time coordinate.
+        Otherwise it takes into account only the last "num_year" timesteps.
+        If num years > len(time coordinate), the annual cycle gets computed over all the time coordinate.
+    copy : Bool
+       set to True (default) if you want to return a copy of the argument in
+       input; set to False if you want to overwrite the input argument.
+    update_attrs : Bool
+        If set to True (default), the new DataArray/Dataset will have an attribute
+        as a reference that the annual cycle function has been applied to it.
+
+    Returns
+    ----------
+    xarray.Dataset or xarray.DataArray
+
+    New Dataset or DataArray object with annual cycle applied to its "time" dimension.
+
+    '''
+
+    if not check_xarray(x): exception_xarray()
+    if 'annual_cycle' in x.attrs: return x
+    if 'seasonal_cycle' in x.attrs:
+        raise Exception('Cannot perform annual cycle on a variable on which seasonal cycle has already been performed')
+    if 'annual_mean' in x.attrs:
+        raise Exception('Cannot perform annual cycle on a variable on which annual mean has already been performed')
+    if copy: x = x.copy()
+    if num is None: 
+        num = len(x['time'])
+    elif num > len(x['time']): 
+        num = len(x['time'])
+    if update_attrs:
+        x.attrs['annual_cycle'] = 'Computed annual cycle of {} timesteps'.format(num)
+        if check_xarray(x,'Dataset'):
+            for var in x: x._variables[var].attrs['annual_cycle'] = 'Computed annual cycle of {} timesteps'.format(num)
+    x = x.isel(time=slice(-num,None))
+    return x.groupby("time.dayofyear").mean("time",keep_attrs=True).rename({"dayofyear":"time"}).squeeze()
+
 def global_mean(x,copy=True,update_attrs=True):
     '''
     Compute the global mean over 'lat' and 'lon' dimension.
@@ -2045,7 +2099,7 @@ def anomalies(x,x_base=None,copy=True,update_attrs=True):
     else:
         if not check_xarray(x_base): exception_xarray()
     if 'annual_mean' in x.attrs: 
-        num= x.attrs['annual_mean'].split()[4]
+        num= int(x.attrs['annual_mean'].split()[4])
         x_base = annual_mean(x_base,num=num)
     if 'seasonal_cycle' in x.attrs: x_base = seasonal_cycle(x_base)
     if 'global_mean' in x.attrs: x_base = global_mean(x_base)
@@ -2923,8 +2977,12 @@ def t_student_probability(x,y,season=None):
             y1 = y.isel(time=y.groupby('time.season').groups[season])
         else:
             raise Exception("season must be a value among 'DJF','MAM','JJA' and 'SON'.")
-    x1=x.groupby('time.year').mean('time')
-    y1=y.groupby('time.year').mean('time')
+    try:
+        x1=x.groupby('time.year').mean('time')
+        y1=y.groupby('time.year').mean('time')
+    except:
+        pass
+    
     p=stats.ttest_ind(x1,y1,nan_policy="omit").pvalue
     p[np.where(np.isnan(p))]=1
     dims=list(x.dims)
