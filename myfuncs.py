@@ -517,23 +517,27 @@ class DataArray(xr.DataArray):
         if (self.name == 'tocean'):
             plt.gca().add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m'),
                                   **land_kwargs)
-        if statistics != 'none':
-            if statistics == 'all':
-                gm=self.global_mean().values
-                rms=self.rms().values
-                txt = ('gmean = {:.3g}  |  rmse = {:.3g}').format(gm,rms)
-                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                     transform=plt.gca().transAxes,fontsize=12, weight='bold')
-            elif statistics == 'gmean':
-                gm=self.global_mean().values
-                txt = ('gmean = {:.3g}').format(gm)
-                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                     transform=plt.gca().transAxes,fontsize=12, weight='bold')
-            elif statistics == 'rms':
-                rms=self.rms().values
-                txt = ('rmse = {:.3g}').format(rms)
-                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                     transform=plt.gca().transAxes,fontsize=12, weight='bold')         
+        if isinstance(statistics,list):
+            fs=statistics[1]
+            statistics=statistics[0]
+        else:
+            fs=12
+        if statistics == 'all':
+            gm=self.global_mean().values
+            rms=self.rms().values
+            txt = ('gmean = {:.3g}  |  rmse = {:.3g}').format(gm,rms)
+            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')
+        elif statistics == 'gmean':
+            gm=self.global_mean().values
+            txt = ('gmean = {:.3g}').format(gm)
+            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')
+        elif statistics == 'rms':
+            rms=self.rms().values
+            txt = ('rmse = {:.3g}').format(rms)
+            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')         
         if isinstance(t_student,bool):
             if t_student:
                 raise Exception('t_student must be False, or equal to either a dictionary or an '
