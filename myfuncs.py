@@ -311,6 +311,9 @@ class Dataset(xr.Dataset):
         if 'keep_attrs' not in kwargs: kwargs.update({'keep_attrs':True})
         return self.apply(average, dim=dim, weights=weights,**kwargs)
 
+    def latitude_mean(self,copy=True,update_attrs=True):
+        return latitude_mean(self,copy=copy,update_attrs=update_attrs)
+
     def global_mean(self,copy=True,update_attrs=True):
         return global_mean(self,copy=copy,update_attrs=update_attrs)
 
@@ -926,6 +929,9 @@ class DataArray(xr.DataArray):
     def average(self, dim=None, weights=None,**kwargs):
         if 'keep_attrs' not in kwargs: kwargs.update({'keep_attrs':True})
         return average(self, dim=dim, weights=weights,**kwargs)
+    
+    def latitude_mean(self,copy=True,update_attrs=True):
+        return latitude_mean(self,copy=copy,update_attrs=update_attrs)
 
     def global_mean(self,copy=True,update_attrs=True):
         return global_mean(self,copy=copy,update_attrs=update_attrs)
@@ -1943,6 +1949,48 @@ def annual_cycle(x,num=None,copy=True,update_attrs=True):
     x = x.isel(time=slice(-num,None))
     return x.groupby("time.dayofyear").mean("time",keep_attrs=True).rename({"dayofyear":"time"}).squeeze()
 
+def latitude_mean(x,copy=True,update_attrs=True):
+    '''
+    Compute the mean over latitude dimension, weigthed with cos(latitude).
+
+    Arguments
+    ----------
+    x : xarray.Dataset or xarray.DataArray object
+       array to compute the global mean on
+
+    Parameters
+    ----------
+    copy : Bool
+       set to True (default) if you want to return a copy of the argument in
+       input; set to False if you want to overwrite the input argument.
+    update_attrs : Bool
+        If set to True (default), the new DataArray/Dataset will have an attribute
+        as a reference that the "global_mean" function has been applied to it.
+
+    Returns
+    ----------
+    xarray.Dataset or xarray.DataArray
+
+    weights.
+    New Dataset or DataArray object with average applied to its latitude, weighted with cos(latitude).
+
+    '''
+    if not check_xarray(x): exception_xarray()
+    lat,lon=x.get_spatial_coords()
+    if 'latitude_mean' in x.attrs: return x
+    if 'global_mean' in x.attrs:
+        raise Exception('Cannot perform the mean over latitude on a variable on which global mean has already been performed')
+    if copy: x = x.copy()
+    if update_attrs:
+        x.attrs['latitude_mean'] = 'Computed latitude mean'
+        if check_xarray(x,'Dataset'):
+            for var in x: x._variables[var].attrs['latitude_mean'] = 'Computed latitude mean'
+    if lat in x.dims:
+        weights = np.cos(np.deg2rad(x[lat]))
+        return x.average(dim=lat,weights=weights,keep_attrs=True).squeeze()
+    else:
+        raise Exception('Impossible to perform latitude mean, no latitude dim.')
+
 def global_mean(x,copy=True,update_attrs=True):
     '''
     Compute the global mean over 'lat' and 'lon' dimension.
@@ -1971,9 +2019,10 @@ def global_mean(x,copy=True,update_attrs=True):
     weights.
 
     '''
-    lat,lon=x.get_spatial_coords()
     if not check_xarray(x): exception_xarray()
+    lat,lon=x.get_spatial_coords()
     if 'global_mean' in x.attrs: return x
+    lat_mean = True if 'latitude_mean' in x.attrs else False
     if 'rms' in x.attrs:
         raise Exception('Cannot perform global mean on a variable on which rms has already been performed')
     if copy: x = x.copy()
@@ -1981,9 +2030,15 @@ def global_mean(x,copy=True,update_attrs=True):
         x.attrs['global_mean'] = 'Computed global mean'
         if check_xarray(x,'Dataset'):
             for var in x: x._variables[var].attrs['global_mean'] = 'Computed global mean'
-    if lat in x.coords and lon in x.coords:
-        weights = np.cos(np.deg2rad(x[lat]))
-        return x.average(dim=lat,weights=weights,keep_attrs=True).mean(lon,keep_attrs=True).squeeze()
+            if lat_mean: 
+                for var in x: del x._variables[var].attrs['latitude_mean']
+        if lat_mean: del x.attrs["latitude_mean"]
+    if lat in x.dims and lon in x.dims:
+        if not lat_mean:
+            weights = np.cos(np.deg2rad(x[lat]))
+            return x.average(dim=lat,weights=weights,keep_attrs=True).mean(lon,keep_attrs=True).squeeze()
+        else:
+            return x.mean(lon,keep_attrs=True).squeeze()
     elif 'stacked_lat_lon' in x.coords:
         weights = np.cos(np.deg2rad(x[lat]))
         return x.average(dim='stacked_lat_lon',weights=weights,keep_attrs=True).squeeze()
@@ -2085,7 +2140,7 @@ def anomalies(x,x_base=None,copy=True,update_attrs=True):
             ctrfile=Constants.greb.control_def_file()
         if 'grouped_by' in x.attrs:
             x_base = from_binary(ctrfile,x.attrs['grouped_by'])
-        elif (any(['annual_mean' in x.attrs,'seasonal_cycle' in x.attrs,'global_mean' in x.attrs,'rms' in x.attrs])) or \
+        elif (any(['annual_mean' in x.attrs,'seasonal_cycle' in x.attrs,'global_mean' in x.attrs,'rms' in x.attrs,'latitude_mean'])) or \
             (ctrfile == Constants.greb.cloud_def_file()) or (ctrfile == Constants.greb.solar_def_file()):
             x_base = from_binary(ctrfile)
         else:
