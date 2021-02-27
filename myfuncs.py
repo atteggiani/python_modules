@@ -331,7 +331,7 @@ class Dataset(xr.Dataset):
         return group_by(self,time_group,copy=copy,update_attrs=update_attrs)
 
     def srex_mean(self,copy=True):
-        mask=Constants.greb.srex_regions.mask()
+        mask=GREB.srex_regions.mask()
         if copy: self=self.copy()
         new=self.groupby(mask).apply(global_mean)
         new.coords['srex_abbrev'] = ('srex_region', srex_regions.abbrevs)
@@ -341,9 +341,6 @@ class Dataset(xr.Dataset):
     def seasonal_time_series(self,first_month_num=None,update_attrs=True):
         return seasonal_time_series(self,first_month_num=first_month_num,
                                     update_attrs=update_attrs)
-    
-    def add_evaporation(self):
-        return add_evaporation(self)
 
 class DataArray(xr.DataArray):
     '''
@@ -550,7 +547,7 @@ class DataArray(xr.DataArray):
                 _check_shapes(t_student,self)
                 t_student = {"p":t_student}
             elif isinstance(t_student,np.ndarray):
-                t_student = {"p":xr.DataArray(data=t_student,dims = ["latitude","longitude"], coords=[Constants.um.latitude,Constants.um.longitude])}
+                t_student = {"p":xr.DataArray(data=t_student,dims = ["latitude","longitude"], coords=[UM.latitude,UM.longitude])}
             if isinstance(t_student,dict):
                 if "p" not in t_student:
                     raise Exception('t_student must be contain "p" key, containing '
@@ -558,7 +555,7 @@ class DataArray(xr.DataArray):
                         'probabilities.\nTo obtain t_student distribution '
                         'probabilities, you can use the "t_student_probability" function.')
                 elif isinstance(t_student["p"],np.ndarray):
-                    t_student["p"] = xr.DataArray(data=t_student["p"],dims = ["latitude","longitude"], coords=[Constants.um.latitude,Constants.um.longitude])
+                    t_student["p"] = xr.DataArray(data=t_student["p"],dims = ["latitude","longitude"], coords=[UM.latitude,UM.longitude])
                 if "treshold" in t_student:
                     if t_student["treshold"] > 1:
                         raise Exception("Treshold must be <= 1")
@@ -591,8 +588,8 @@ class DataArray(xr.DataArray):
 
         '''
 
-        cmap_tsurf=Constants.colormaps.div_tsurf
-        cmap_precip=Constants.colormaps.div_precip
+        cmap_tsurf=Colormaps.div_tsurf
+        cmap_precip=Colormaps.div_precip
         keys=self.attrs.keys()
         name=self.name
         if nlev is None: nlev=100
@@ -753,7 +750,7 @@ class DataArray(xr.DataArray):
                     cbticks = np.arange(-1,1+0.2,0.2)
         # SOLAR
         elif name == 'solar':
-            self=Constants.greb.def_DataArray(data=np.broadcast_to(self,[Constants.greb.dx()]+list(self.shape)).transpose(),
+            self=GREB.def_DataArray(data=np.broadcast_to(self,[GREB.dx()]+list(self.shape)).transpose(),
                                          dims=('lat','lon'),
                                          attrs=self.attrs)
             cmap = cm.YlOrRd
@@ -825,7 +822,7 @@ class DataArray(xr.DataArray):
                 _check_shapes(t_student,self)
                 t_student = {"p":t_student}
             elif isinstance(t_student,np.ndarray):
-                t_student = {"p":xr.DataArray(data=t_student,dims = ["latitude","longitude"], coords=[Constants.um.latitude,Constants.um.longitude])}
+                t_student = {"p":xr.DataArray(data=t_student,dims = ["latitude","longitude"], coords=[UM.latitude,UM.longitude])}
             if isinstance(t_student,dict):
                 if "p" not in t_student:
                     raise Exception('t_student must be contain "p" key, containing '
@@ -833,7 +830,7 @@ class DataArray(xr.DataArray):
                         'probabilities.\nTo obtain t_student distribution '
                         'probabilities, you can use the "t_student_probability" function.')
                 elif isinstance(t_student["p"],np.ndarray):
-                    t_student["p"] = xr.DataArray(data=t_student["p"],dims = ["latitude","longitude"], coords=[Constants.um.latitude,Constants.um.longitude])
+                    t_student["p"] = xr.DataArray(data=t_student["p"],dims = ["latitude","longitude"], coords=[UM.latitude,UM.longitude])
                 if "treshold" in t_student:
                     if t_student["treshold"] > 1:
                         raise Exception("Treshold must be <= 1")
@@ -958,7 +955,7 @@ class DataArray(xr.DataArray):
         return group_by(self,time_group,copy=copy,update_attrs=update_attrs)
 
     def srex_mean(self,copy=True):
-        mask=Constants.greb.srex_regions.mask()
+        mask=self.srex_regions.mask()
         if copy: self=self.copy()
         new=self.groupby(mask).apply(global_mean)
         new.coords['srex_abbrev'] = ('srex_region', srex_regions.abbrevs)
@@ -972,489 +969,528 @@ class DataArray(xr.DataArray):
     def t_student_probability(self,y,season=None):
         return t_student_probability(self,y,season=season)
 
-class Constants:
-    '''
-    Class to wrap all the Constants for GREB model, UM along with the default working
-    folders and custom colormaps.
-    '''
-    def __init__(self):
-        pass
-
-    class um:
-        longitude = np.array([  0.  ,   3.75,   7.5 ,  11.25,  15.  ,  18.75,  22.5 ,  26.25,
+class UM:
+    longitude = np.array([  0.  ,   3.75,   7.5 ,  11.25,  15.  ,  18.75,  22.5 ,  26.25,
         30.  ,  33.75,  37.5 ,  41.25,  45.  ,  48.75,  52.5 ,  56.25,
         60.  ,  63.75,  67.5 ,  71.25,  75.  ,  78.75,  82.5 ,  86.25,
         90.  ,  93.75,  97.5 , 101.25, 105.  , 108.75, 112.5 , 116.25,
-       120.  , 123.75, 127.5 , 131.25, 135.  , 138.75, 142.5 , 146.25,
-       150.  , 153.75, 157.5 , 161.25, 165.  , 168.75, 172.5 , 176.25,
-       180.  , 183.75, 187.5 , 191.25, 195.  , 198.75, 202.5 , 206.25,
-       210.  , 213.75, 217.5 , 221.25, 225.  , 228.75, 232.5 , 236.25,
-       240.  , 243.75, 247.5 , 251.25, 255.  , 258.75, 262.5 , 266.25,
-       270.  , 273.75, 277.5 , 281.25, 285.  , 288.75, 292.5 , 296.25,
-       300.  , 303.75, 307.5 , 311.25, 315.  , 318.75, 322.5 , 326.25,
-       330.  , 333.75, 337.5 , 341.25, 345.  , 348.75, 352.5 , 356.25],
-       dtype=np.float32)
+        120.  , 123.75, 127.5 , 131.25, 135.  , 138.75, 142.5 , 146.25,
+        150.  , 153.75, 157.5 , 161.25, 165.  , 168.75, 172.5 , 176.25,
+        180.  , 183.75, 187.5 , 191.25, 195.  , 198.75, 202.5 , 206.25,
+        210.  , 213.75, 217.5 , 221.25, 225.  , 228.75, 232.5 , 236.25,
+        240.  , 243.75, 247.5 , 251.25, 255.  , 258.75, 262.5 , 266.25,
+        270.  , 273.75, 277.5 , 281.25, 285.  , 288.75, 292.5 , 296.25,
+        300.  , 303.75, 307.5 , 311.25, 315.  , 318.75, 322.5 , 326.25,
+        330.  , 333.75, 337.5 , 341.25, 345.  , 348.75, 352.5 , 356.25],
+    dtype=np.float32)
         
-        latitude = np.array([-90. , -87.5, -85. , -82.5, -80. , -77.5, -75. , -72.5, -70. ,
-       -67.5, -65. , -62.5, -60. , -57.5, -55. , -52.5, -50. , -47.5,
-       -45. , -42.5, -40. , -37.5, -35. , -32.5, -30. , -27.5, -25. ,
-       -22.5, -20. , -17.5, -15. , -12.5, -10. ,  -7.5,  -5. ,  -2.5,
-         0. ,   2.5,   5. ,   7.5,  10. ,  12.5,  15. ,  17.5,  20. ,
+    latitude = np.array([-90. , -87.5, -85. , -82.5, -80. , -77.5, -75. , -72.5, -70. ,
+        -67.5, -65. , -62.5, -60. , -57.5, -55. , -52.5, -50. , -47.5,
+        -45. , -42.5, -40. , -37.5, -35. , -32.5, -30. , -27.5, -25. ,
+        -22.5, -20. , -17.5, -15. , -12.5, -10. ,  -7.5,  -5. ,  -2.5,
+        0. ,   2.5,   5. ,   7.5,  10. ,  12.5,  15. ,  17.5,  20. ,
         22.5,  25. ,  27.5,  30. ,  32.5,  35. ,  37.5,  40. ,  42.5,
         45. ,  47.5,  50. ,  52.5,  55. ,  57.5,  60. ,  62.5,  65. ,
         67.5,  70. ,  72.5,  75. ,  77.5,  80. ,  82.5,  85. ,  87.5,
         90. ], dtype=np.float32)
 
-        hybrid_height = np.float32([9.99820613861084, 49.99888229370117, 130.00022888183594, 
-                                    249.9983367919922, 410.00103759765625, 610.00048828125, 
-                                    850.0006103515625,  1130.00146484375, 1449.9990234375, 
-                                    1810.0010986328125, 2210.0, 2649.99951171875, 3129.999755859375, 
-                                    3650.000732421875, 4209.99853515625, 4810.0009765625, 5450.0, 
-                                    6129.99951171875, 6850.0, 7610.0009765625, 8409.9990234375,  
-                                    9250.0009765625, 10130.0, 11050.0, 12010.0009765625, 13010.001953125, 
-                                    14050.400390625, 15137.7197265625, 16284.9736328125,17506.96875, 
-                                    18820.8203125, 20246.599609375, 21808.13671875, 23542.18359375, 
-                                    25520.9609375, 27901.357421875, 31063.888671875, 36081.76171875])
+    hybrid_height = np.float32([9.99820613861084, 49.99888229370117, 130.00022888183594, 
+                                249.9983367919922, 410.00103759765625, 610.00048828125, 
+                                850.0006103515625,  1130.00146484375, 1449.9990234375, 
+                                1810.0010986328125, 2210.0, 2649.99951171875, 3129.999755859375, 
+                                3650.000732421875, 4209.99853515625, 4810.0009765625, 5450.0, 
+                                6129.99951171875, 6850.0, 7610.0009765625, 8409.9990234375,  
+                                9250.0009765625, 10130.0, 11050.0, 12010.0009765625, 13010.001953125, 
+                                14050.400390625, 15137.7197265625, 16284.9736328125,17506.96875, 
+                                18820.8203125, 20246.599609375, 21808.13671875, 23542.18359375, 
+                                25520.9609375, 27901.357421875, 31063.888671875, 36081.76171875])
+    
+    def months(n_char=2):
+        if n_char == 2:
+            return ["ja","fb","mr","ar","my","jn","jl","ag","sp","ot","nv","dc"]
+        elif n_char == 3:
+            return ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
+        else:
+            raise Exception("n_char must be either 2 or 3.")
 
-        def months(n_char=2):
-            if n_char == 2:
-                return ["ja","fb","mr","ar","my","jn","jl","ag","sp","ot","nv","dc"]
-            elif n_char == 3:
-                return ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
+    @staticmethod
+    def streams():
+        return ['a','b','c','d','e','f','g','h','i','j']
+
+    def ppm2kgkg(x):
+        m_air=0.0289644 #kg/mol
+        m_CO2=0.0440095 #kg/mol
+        coeff=1E-6*(m_CO2/m_air)
+        return x*coeff
+
+    def kgkg2ppm(x):
+        m_air=0.0289644 #kg/mol
+        m_CO2=0.0440095 #kg/mol
+        coeff=1E-6*(m_CO2/m_air)
+        return x/coeff
+    
+    @staticmethod
+    def um_years_ref():
+        return {10:"a",11:"b",12:"c",13:"d",14:"e",15:"f",16:"g",17:"h",18:"i",19:"j",20:"k",21:"l",22:"m",
+                23:"n",24:"o",25:"p",26:"q",27:"r",28:"s",29:"t",30:"u",31:"v",32:"w",33:"x",34:"y",35:"z"}
+
+    def to_um_filename_years(years):
+        if isinstance(years,list):
+            return ['{}{:02d}'.format(UM.um_years_ref()[int(y/100)],int(round((y/100 % 1)*100))) for y in years]
+        else:
+            return '{}{:02d}'.format(UM.um_years_ref()[int(years/100)],int(round((years/100 % 1)*100)))
+            
+    def from_um_filename_years(um_years):
+        def get_key_by_value(val):
+            for v in UM.um_years_ref().items():
+                if v[1] == val:
+                    return  v[0]
+        if isinstance(um_years,list):
+            return [get_key_by_value(y[0])*100+int(y[-2:]) for y in um_years]
+        else:
+            return get_key_by_value(um_years[0])*100+int(um_years[-2:])    
+            
+    @staticmethod
+    def land_mask_file():
+        return "/g/data3/w48/dm5220/ancil/land_mask/land_mask.nc"
+
+    def add_evaporation(x):
+        '''
+        Function to add the variable "evaporation" to the Dataset.
+        This variable is computed by adding the 2 variables of the dataset "evaporation_flux_from_open_sea" and "evaporation_from_soil_surface".
+
+        Arguments
+        ----------
+        x : Dataset objects
+        Dataset to add the "evaporation" variable to.
+
+        Returns
+        ----------
+        xarray.Dataset
+
+        New Dataset containing the "evaporation" variable.
+        '''
+    
+        variables = ["evaporation_flux_from_open_sea","evaporation_from_soil_surface"]
+        for v in variables:
+            if v not in x.variables: raise Exception('Current Dataset doesn"t include the variable "{}".'.format(v))
+        return x.assign(evaporation=x[variables[0]].where(x[variables[0]] <= 100,0) + 
+                        x[variables[1]].where(x[variables[1]] <= 100,0))
+
+    def rename_m01s09i231(x):
+        '''
+        Function to rename the variable m01s09i231 of UM model to combined_cloud_amount.
+        '''
+        return x.rename_vars({"m01s09i231":"combined_cloud_amount"})
+
+    def split_w_wind(x):
+        '''
+        Function to split w component of winds into w_up and w_down
+        '''
+        d=x["upward_air_velocity"]
+        d_up=d.where(d>0,0)
+        d_down=-d.where(d<0,0)
+        d_overtuning=d_down-d_up
+        return x.assign({"omega_up":d_up,"omega_down":d_down,"omega_overtuning":d_overtuning})
+
+
+class GREB:
+    
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def t():
+        bin2netCDF(self.cloud_def_file())
+        time=xr.open_dataset(self.cloud_def_file()+'.nc').time
+        os.remove(self.cloud_def_file()+'.nc')
+        return time
+
+    @staticmethod
+    def lat():
+        return np.arange(-88.125,88.125+3.75,3.75)
+
+    @staticmethod
+    def lon():
+        return np.arange(0,360,3.75)
+
+    @staticmethod
+    def dx():
+        return len(self.lon())
+
+    @staticmethod
+    def dy():
+        return len(self.lat())
+
+    @staticmethod
+    def dt():
+        return len(self.t())
+
+    @staticmethod
+    def time():
+
+        return time
+
+    @staticmethod
+    def greb_folder():
+        return "/Users/dmar0022/university/phd/GREB-official"
+
+    @staticmethod
+    def figures_folder():
+        return self.greb_folder()+'/figures'
+
+    @staticmethod
+    def output_folder():
+        return self.greb_folder()+'/output'
+
+    @staticmethod
+    def input_folder():
+        return self.greb_folder()+'/input'
+
+    @staticmethod
+    def scenario_2xCO2(years_of_simulation=50):
+        return self.output_folder()+'/scenario.exp-20.2xCO2_{}yrs'.format(years_of_simulation)
+
+    @staticmethod
+    def cloud_def_file():
+        return self.greb_folder()+'/input/isccp.cloud_cover.clim'
+
+    @staticmethod
+    def solar_def_file():
+        return self.greb_folder()+'/input/solar_radiation.clim'
+
+    @staticmethod
+    def cloud_folder():
+        return self.greb_folder()+'/artificial_clouds'
+
+    @staticmethod
+    def solar_folder():
+        return self.greb_folder()+'/artificial_solar_radiation'
+
+    @staticmethod
+    def cloud_figures_folder():
+        return self.cloud_folder()+'/art_clouds_figures'
+
+    @staticmethod
+    def control_def_file():
+        return self.output_folder()+'/control.default'
+
+    @staticmethod
+    def to_greb_grid(x, method='cubic'):
+        '''
+        Regrid data to GREB lat/lon grid.
+
+        Arguments
+        ----------
+        x : xarray.DataArray or xarray.Dataset
+            Data to be regridded.
+
+        Parameters
+        ----------
+        method: str
+            Method for the interpolation.
+            Can be chosen between: 'linear' (default), 'nearest', 'zero',
+                                    'slinear', 'quadratic', 'cubic'.
+
+        Returns
+        ----------
+        New xarray.Dataset or xarray.DataArray regridded into GREB lat/lon grid.
+
+        '''
+
+        grebfile=from_binary(self.control_def_file()).mean('time')
+        return x.interp_like(grebfile,method=method)
+
+    def def_DataArray(data=None,dims=None,coords=None,name=None,attrs=None):
+        if dims is None:
+            dims=('time','lat','lon')
+        elif isinstance(dims,str):
+            dims = [dims]
+        if coords is None:
+            if 'time' in dims: time = self.t()
+            if 'lat' in dims: lat = self.lat()
+            if 'lon' in dims: lon = self.lon()
+        scope = locals()
+        if name is not None:
+            if attrs is None:
+                attrs={'long_name':name}
+            if 'long_name' not in attrs:
+                attrs.update({'long_name':name})
+        if coords is None:coords = dict((key,eval(key,scope)) for key in dims)
+        if data is None: data = np.zeros([len(val) for val in coords.values()])
+        return DataArray(data,name=name,dims=dims,coords=coords,attrs=attrs)
+
+    @staticmethod
+    def to_greb_indexes(lat,lon):
+        '''
+        Convert lat/lon from degrees to GREB indexes
+
+        Arguments
+        ----------
+        lat : float or array of floats
+            latitude point or array of latitude points.
+        lon : float or array of floats
+            longitude point or array of longitude points.
+            lat and lon must be the same lenght
+
+        Returns
+        ----------
+        GREB model Indexes corrisponding to the lat/lon couples.
+
+        '''
+
+        lat = np.array(lat)
+        lon = np.array(lon)
+        if np.any(lat<-90) or np.any(lat>90):
+            raise ValueError('lat value must be between -90 and 90 degrees')
+        lon=np.array(lon)
+        if np.any(lon<0) or np.any(lon>360):
+            raise ValueError('lon value must be between 0 and 360 degrees')
+        lat_def = self.lat().tolist()
+        lon_def = self.lon().tolist()
+        i = [lat_def.index(min(lat_def, key=lambda x:abs(x-la))) for la in lat] \
+            if len(lat.shape) == 1 else lat_def.index(min(lat_def, key=lambda x:abs(x-lat)))
+        j = [lon_def.index(min(lon_def, key=lambda x:abs(x-lo))) for lo in lon] \
+            if len(lon.shape) == 1 else lon_def.index(min(lon_def, key=lambda x:abs(x-lon)))
+        return i,j
+
+    @staticmethod
+    def shape_for_bin(type='cloud'):
+        if type == 'cloud' or type == 'r':
+            # 'Shape must be in the form (tdef,ydef,xdef)'
+            return (self.dt(),self.dy(),self.dx())
+        elif type == 'solar':
+            return (self.dt(),self.dy(),1)
+        else: raise Exception('type must be either "cloud" or "solar"')
+
+    @staticmethod
+    def to_shape_for_bin(data,type='cloud'):
+        def_sh = self.shape_for_bin(type)
+        sh=data.shape
+        if (len(sh) != 3) or len(set(sh)) != 3: raise Exception('data must be 3D, in the form {}x{}x{}'.format(def_sh[0],def_sh[1],def_sh[2]))
+        if ((sh[0] not in def_sh) or (sh[1] not in def_sh) or (sh[2] not in def_sh)):
+            raise Exception('data shape must be in the form {}x{}x{}'.format(def_sh[0],def_sh[1],def_sh[2]))
+        if sh != def_sh:
+            indt=sh.index(def_sh[0])
+            indy=sh.index(def_sh[1])
+            indx=sh.index(def_sh[2])
+            data = data.transpose(indt,indy,indx)
+        return data
+
+    @staticmethod
+    def get_years_of_simulation(sc_filename):
+        '''
+        Gets the number of years of simulations for the specified scenario file.
+
+        Arguments
+        ----------
+        sc_filename : str
+            Path to the scenario file
+
+        Returns
+        ----------
+        int
+            Number of years of simulations
+
+        '''
+
+        if 'yrs' not in sc_filename.split('_')[-1]:
+            raise Exception('Could not understand the number of years of simulation.'+
+                            '\nNumber of years of simulation N must be at the end of'+
+                            ' sc_filename in the form "_Nyrs"')
+        else:
+            return (sc_filename.split('_')[-1])[:-3]
+
+    @staticmethod
+    def get_art_forcing_filename(sc_filename,forcing=None,output_path=None):
+        '''
+        Gets the artificial cloud filename used to obtain the scenario filename in input.
+
+        Arguments
+        ----------
+        sc_filename : str
+            Path to the scenario file
+
+        Parameters
+        ----------
+        forcing : str
+            Type of forcing to retrieve. Can be set to "cloud" or "solar".
+            If not set, the forcing type will be tried to be understood from the
+            scenario filename.
+        output_path : str
+            Path of the folder where to search for the artificial forcing file.
+
+        Returns
+        ----------
+        str
+            Path to the artificial cloud
+
+        '''
+        # Remove extension
+        sc_filename = rmext(os.path.split(sc_filename)[1])
+        # Remove years of simulation
+        if sc_filename.endswith('yrs'):
+            sc_filename = '_'.join(sc_filename.split('_')[:-1])
+        # Get experiment number
+        exp=sc_filename.split('.')[1]
+        # Control run or other (non-geoengineering) experiments
+        if exp not in ['exp-{}'.format(n) for n in ['930','931','932','933']]:
+            if forcing in ['cloud','solar']:
+                return eval('self.{}_def_file()'.format(forcing))
             else:
-                raise Exception("n_char must be either 2 or 3.")
-
-        @staticmethod
-        def streams():
-            return ['a','b','c','d','e','f','g','h','i','j']
-
-        def ppm2kgkg(x):
-            m_air=0.0289644 #kg/mol
-            m_CO2=0.0440095 #kg/mol
-            coeff=1E-6*(m_CO2/m_air)
-            return x*coeff
-
-        def kgkg2ppm(x):
-            m_air=0.0289644 #kg/mol
-            m_CO2=0.0440095 #kg/mol
-            coeff=1E-6*(m_CO2/m_air)
-            return x/coeff
-
-        def to_um_filename_years(years):
-            import string
-            if isinstance(years,list):
-                year=np.array(years).tolist()
-                return ['{}{:02d}'.format(string.ascii_lowercase[int(y/100)],
-                                          int(round((y/100 % 1)*100))) for y in years]
-            else:
-                return '{}{:02d}'.format(string.ascii_lowercase[int(years/100)],int(round((years/100 % 1)*100)))
-
-        def from_um_filename_years(um_years):
-            import string
-            if isinstance(um_years,list):
-                year=np.array(um_years).tolist()
-                return [string.ascii_lowercase.index(y[0])*100+int(y[-2:]) for y in um_years]
-            else:
-                return string.ascii_lowercase.index(um_years[0])*100+int(um_years[-2:])
-
-        @staticmethod
-        def land_mask_file():
-            return "/g/data3/w48/dm5220/ancil/land_mask/land_mask.nc"
-
-    class greb:
-        @staticmethod
-        def t():
-            bin2netCDF(Constants.greb.cloud_def_file())
-            time=xr.open_dataset(Constants.greb.cloud_def_file()+'.nc').time
-            os.remove(Constants.greb.cloud_def_file()+'.nc')
-            return time
-
-        @staticmethod
-        def lat():
-            return np.arange(-88.125,88.125+3.75,3.75)
-
-        @staticmethod
-        def lon():
-            return np.arange(0,360,3.75)
-
-        @staticmethod
-        def dx():
-            return len(Constants.greb.lon())
-
-        @staticmethod
-        def dy():
-            return len(Constants.greb.lat())
-
-        @staticmethod
-        def dt():
-            return len(Constants.greb.t())
-
-        @staticmethod
-        def time():
-
-            return time
-
-        @staticmethod
-        def greb_folder():
-            return r'/Users/dmar0022/university/phd/greb-official'
-
-        @staticmethod
-        def figures_folder():
-            return Constants.greb.greb_folder()+'/figures'
-
-        @staticmethod
-        def output_folder():
-            return Constants.greb.greb_folder()+'/output'
-
-        @staticmethod
-        def input_folder():
-            return Constants.greb.greb_folder()+'/input'
-
-        @staticmethod
-        def scenario_2xCO2(years_of_simulation=50):
-            return Constants.greb.output_folder()+'/scenario.exp-20.2xCO2_{}yrs'.format(years_of_simulation)
-
-        @staticmethod
-        def cloud_def_file():
-            return Constants.greb.greb_folder()+'/input/isccp.cloud_cover.clim'
-
-        @staticmethod
-        def solar_def_file():
-            return Constants.greb.greb_folder()+'/input/solar_radiation.clim'
-
-        @staticmethod
-        def cloud_folder():
-            return Constants.greb.greb_folder()+'/artificial_clouds'
-
-        @staticmethod
-        def solar_folder():
-            return Constants.greb.greb_folder()+'/artificial_solar_radiation'
-
-        @staticmethod
-        def cloud_figures_folder():
-            return Constants.greb.cloud_folder()+'/art_clouds_figures'
-
-        @staticmethod
-        def control_def_file():
-            return Constants.greb.output_folder()+'/control.default'
-
-        @staticmethod
-        def to_greb_grid(x, method='cubic'):
-            '''
-            Regrid data to GREB lat/lon grid.
-
-            Arguments
-            ----------
-            x : xarray.DataArray or xarray.Dataset
-                Data to be regridded.
-
-            Parameters
-            ----------
-            method: str
-                Method for the interpolation.
-                Can be chosen between: 'linear' (default), 'nearest', 'zero',
-                                       'slinear', 'quadratic', 'cubic'.
-
-            Returns
-            ----------
-            New xarray.Dataset or xarray.DataArray regridded into GREB lat/lon grid.
-
-            '''
-
-            greb=from_binary(Constants.greb.control_def_file()).mean('time')
-            return x.interp_like(greb,method=method)
-
-        def def_DataArray(data=None,dims=None,coords=None,name=None,attrs=None):
-            if dims is None:
-                dims=('time','lat','lon')
-            elif isinstance(dims,str):
-                dims = [dims]
-            if coords is None:
-                if 'time' in dims: time = Constants.greb.t()
-                if 'lat' in dims: lat = Constants.greb.lat()
-                if 'lon' in dims: lon = Constants.greb.lon()
-            scope = locals()
-            if name is not None:
-                if attrs is None:
-                    attrs={'long_name':name}
-                if 'long_name' not in attrs:
-                    attrs.update({'long_name':name})
-            if coords is None:coords = dict((key,eval(key,scope)) for key in dims)
-            if data is None: data = np.zeros([len(val) for val in coords.values()])
-            return DataArray(data,name=name,dims=dims,coords=coords,attrs=attrs)
-
-        @staticmethod
-        def to_greb_indexes(lat,lon):
-            '''
-            Convert lat/lon from degrees to GREB indexes
-
-            Arguments
-            ----------
-            lat : float or array of floats
-                latitude point or array of latitude points.
-            lon : float or array of floats
-                longitude point or array of longitude points.
-                lat and lon must be the same lenght
-
-            Returns
-            ----------
-            GREB model Indexes corrisponding to the lat/lon couples.
-
-            '''
-
-            lat = np.array(lat)
-            lon = np.array(lon)
-            if np.any(lat<-90) or np.any(lat>90):
-                raise ValueError('lat value must be between -90 and 90 degrees')
-            lon=np.array(lon)
-            if np.any(lon<0) or np.any(lon>360):
-                raise ValueError('lon value must be between 0 and 360 degrees')
-            lat_def = Constants.greb.lat().tolist()
-            lon_def = Constants.greb.lon().tolist()
-            i = [lat_def.index(min(lat_def, key=lambda x:abs(x-la))) for la in lat] \
-                if len(lat.shape) == 1 else lat_def.index(min(lat_def, key=lambda x:abs(x-lat)))
-            j = [lon_def.index(min(lon_def, key=lambda x:abs(x-lo))) for lo in lon] \
-                if len(lon.shape) == 1 else lon_def.index(min(lon_def, key=lambda x:abs(x-lon)))
-            return i,j
-
-        @staticmethod
-        def shape_for_bin(type='cloud'):
-            if type == 'cloud' or type == 'r':
-                # 'Shape must be in the form (tdef,ydef,xdef)'
-                return (Constants.greb.dt(),Constants.greb.dy(),Constants.greb.dx())
-            elif type == 'solar':
-                return (Constants.greb.dt(),Constants.greb.dy(),1)
-            else: raise Exception('type must be either "cloud" or "solar"')
-
-        @staticmethod
-        def to_shape_for_bin(data,type='cloud'):
-            def_sh = Constants.greb.shape_for_bin(type)
-            sh=data.shape
-            if (len(sh) != 3) or len(set(sh)) != 3: raise Exception('data must be 3D, in the form {}x{}x{}'.format(def_sh[0],def_sh[1],def_sh[2]))
-            if ((sh[0] not in def_sh) or (sh[1] not in def_sh) or (sh[2] not in def_sh)):
-                raise Exception('data shape must be in the form {}x{}x{}'.format(def_sh[0],def_sh[1],def_sh[2]))
-            if sh != def_sh:
-                indt=sh.index(def_sh[0])
-                indy=sh.index(def_sh[1])
-                indx=sh.index(def_sh[2])
-                data = data.transpose(indt,indy,indx)
-            return data
-
-        @staticmethod
-        def get_years_of_simulation(sc_filename):
-            '''
-            Gets the number of years of simulations for the specified scenario file.
-
-            Arguments
-            ----------
-            sc_filename : str
-                Path to the scenario file
-
-            Returns
-            ----------
-            int
-               Number of years of simulations
-
-            '''
-
-            if 'yrs' not in sc_filename.split('_')[-1]:
-                raise Exception('Could not understand the number of years of simulation.'+
-                                '\nNumber of years of simulation N must be at the end of'+
-                                ' sc_filename in the form "_Nyrs"')
-            else:
-                return (sc_filename.split('_')[-1])[:-3]
-
-        @staticmethod
-        def get_art_forcing_filename(sc_filename,forcing=None,output_path=None):
-            '''
-            Gets the artificial cloud filename used to obtain the scenario filename in input.
-
-            Arguments
-            ----------
-            sc_filename : str
-                Path to the scenario file
-
-            Parameters
-            ----------
-            forcing : str
-               Type of forcing to retrieve. Can be set to "cloud" or "solar".
-               If not set, the forcing type will be tried to be understood from the
-               scenario filename.
-            output_path : str
-               Path of the folder where to search for the artificial forcing file.
-
-            Returns
-            ----------
-            str
-               Path to the artificial cloud
-
-            '''
-            # Remove extension
-            sc_filename = rmext(os.path.split(sc_filename)[1])
-            # Remove years of simulation
-            if sc_filename.endswith('yrs'):
-                sc_filename = '_'.join(sc_filename.split('_')[:-1])
-            # Get experiment number
-            exp=sc_filename.split('.')[1]
-            # Control run or other (non-geoengineering) experiments
-            if exp not in ['exp-{}'.format(n) for n in ['930','931','932','933']]:
-                if forcing in ['cloud','solar']:
-                    return eval('Constants.greb.{}_def_file()'.format(forcing))
+                raise Exception('Specify forcing to be either "cloud" or "solar".')
+        else:
+            # Get forcing
+            if forcing is None:
+                if exp == 'exp-930':
+                    forcing = 'cloud'
                 else:
-                    raise Exception('Specify forcing to be either "cloud" or "solar".')
-            else:
-                # Get forcing
-                if forcing is None:
-                    if exp == 'exp-930':
-                        forcing = 'cloud'
-                    else:
-                        forcing = 'solar'
-                elif forcing not in ['cloud','solar']:
-                    raise Exception('Invalid forcing name "{}".\nForcing must be either "cloud" or "solar".'.format(forcing))
-                # Get artificial forcing directory
-                if output_path is None:
-                    output_path = eval('Constants.greb.{}_folder()'.format(forcing))
-                # Get artificial path
-                if forcing == 'cloud':
-                    if exp == 'exp-930':
-                        forcing_name='cld.artificial'
-                        name=sc_filename[sc_filename.index(forcing_name):]
-                        return os.path.join(output_path, name)
-                    else:
-                        return eval('Constants.greb.{}_def_file()'.format(forcing))
-                elif forcing == 'solar':
-                    if exp == 'exp-930':
-                        return eval('Constants.greb.{}_def_file()'.format(forcing))
-                    else:
-                        forcing_name='sw.artificial'
-                        name=sc_filename[sc_filename.index(forcing_name):]
-                        return os.path.join(output_path, name)
+                    forcing = 'solar'
+            elif forcing not in ['cloud','solar']:
+                raise Exception('Invalid forcing name "{}".\nForcing must be either "cloud" or "solar".'.format(forcing))
+            # Get artificial forcing directory
+            if output_path is None:
+                output_path = eval('self.{}_folder()'.format(forcing))
+            # Get artificial path
+            if forcing == 'cloud':
+                if exp == 'exp-930':
+                    forcing_name='cld.artificial'
+                    name=sc_filename[sc_filename.index(forcing_name):]
+                    return os.path.join(output_path, name)
+                else:
+                    return eval('self.{}_def_file()'.format(forcing))
+            elif forcing == 'solar':
+                if exp == 'exp-930':
+                    return eval('self.{}_def_file()'.format(forcing))
+                else:
+                    forcing_name='sw.artificial'
+                    name=sc_filename[sc_filename.index(forcing_name):]
+                    return os.path.join(output_path, name)
 
-        @staticmethod
-        def get_scenario_filename(forcing_filename,years_of_simulation=50,input_path=None):
-            '''
-            Gets the scenario filename from either an artifial cloud or solar forcing
-            filename.
+    @staticmethod
+    def get_scenario_filename(forcing_filename,years_of_simulation=50,input_path=None):
+        '''
+        Gets the scenario filename from either an artifial cloud or solar forcing
+        filename.
 
-            Arguments
-            ----------
-            forcing_filename : str
-                Path to the forcing file
+        Arguments
+        ----------
+        forcing_filename : str
+            Path to the forcing file
 
-            Parameters
-            ----------
-            years_of_simulation : int
-               Number of years for which the forcing simulation has been run
+        Parameters
+        ----------
+        years_of_simulation : int
+            Number of years for which the forcing simulation has been run
 
-            Returns
-            ----------
-            str
-               Path to the output scenario
+        Returns
+        ----------
+        str
+            Path to the output scenario
 
-            '''
+        '''
 
-            txt1='cld.artificial'
-            txt2='sw.artificial'
-            forcing_filename = rmext(forcing_filename)
-            forcing_filename_ = os.path.split(forcing_filename)[1]
-            if txt1 in forcing_filename_:
-                sc_name = 'scenario.exp-930.geoeng.'+forcing_filename_+'_{}yrs'.format(years_of_simulation)
-            elif txt2 in forcing_filename_:
-                sc_name = 'scenario.exp-931.geoeng.'+forcing_filename_+'_{}yrs'.format(years_of_simulation)
-            elif (forcing_filename == Constants.greb.cloud_def_file()) or (forcing_filename == Constants.greb.solar_def_file()):
-                sc_name = 'scenario.exp-20.2xCO2'+'_{}yrs'.format(years_of_simulation)
-            else:
-               raise Exception('The forcing file must contain either "cld.artificial" or "sw.artificial"')
-            if input_path is None: input_path = Constants.greb.output_folder()
-            return os.path.join(input_path,sc_name)
+        txt1='cld.artificial'
+        txt2='sw.artificial'
+        forcing_filename = rmext(forcing_filename)
+        forcing_filename_ = os.path.split(forcing_filename)[1]
+        if txt1 in forcing_filename_:
+            sc_name = 'scenario.exp-930.geoeng.'+forcing_filename_+'_{}yrs'.format(years_of_simulation)
+        elif txt2 in forcing_filename_:
+            sc_name = 'scenario.exp-931.geoeng.'+forcing_filename_+'_{}yrs'.format(years_of_simulation)
+        elif (forcing_filename == self.cloud_def_file()) or (forcing_filename == self.solar_def_file()):
+            sc_name = 'scenario.exp-20.2xCO2'+'_{}yrs'.format(years_of_simulation)
+        else:
+            raise Exception('The forcing file must contain either "cld.artificial" or "sw.artificial"')
+        if input_path is None: input_path = self.output_folder()
+        return os.path.join(input_path,sc_name)
 
-        @staticmethod
-        def days_each_month():
-            return np.array([31,28,31,30,31,30,31,31,30,31,30,31])
+    @staticmethod
+    def days_each_month():
+        return np.array([31,28,31,30,31,30,31,31,30,31,30,31])
 
-        @staticmethod
-        def land_ocean_mask():
-            '''
-            A land/ocean mask built from the GREB model topography input.
-            True = Land
-            False = Ocean
+    @staticmethod
+    def land_ocean_mask():
+        '''
+        A land/ocean mask built from the GREB model topography input.
+        True = Land
+        False = Ocean
 
-            '''
-            mask=from_binary(Constants.greb.input_folder()+'/global.topography.bin',parse=False).squeeze().topo
-            mask.data=np.where(mask<=0,False,True)
-            return mask
-        
-        def get_exp_name(exp_num):
-            if isinstance(exp_num,str):
-                exp_num = int(exp_num)
-            elif not isinstance(exp_num,int):
-                raise Exception("exp_num must be either an integer or a string")
-            n1 = "exp-{}".format(exp_num)
-            if exp_num in (930,931):
-                n2 = "geoeng.2xCO2"
-            elif exp_num == 932:
-                n2 = "geoeng.4xCO2"
-            elif exp_num == 933:
-                n2 = "geoeng.control-fixed.tsurf.4xCO2"
-            else:
-                raise Exception("exp_num '{}' not supported".format(exp_num))
-            return ".".join((n1,n2))
+        '''
+        mask=from_binary(self.input_folder()+'/global.topography.bin',parse=False).squeeze().topo
+        mask.data=np.where(mask<=0,False,True)
+        return mask
+    
+    def get_exp_name(exp_num):
+        if isinstance(exp_num,str):
+            exp_num = int(exp_num)
+        elif not isinstance(exp_num,int):
+            raise Exception("exp_num must be either an integer or a string")
+        n1 = "exp-{}".format(exp_num)
+        if exp_num in (930,931):
+            n2 = "geoeng.2xCO2"
+        elif exp_num == 932:
+            n2 = "geoeng.4xCO2"
+        elif exp_num == 933:
+            n2 = "geoeng.control-fixed.tsurf.4xCO2"
+        else:
+            raise Exception("exp_num '{}' not supported".format(exp_num))
+        return ".".join((n1,n2))
 
+class Colormaps:
+    def __init__(self):
+        pass
+    
+    def add_white_inbetween(colormap,name=None):
+        if name is None:
+            name = 'new_'+colormap.name
+        cm0=colormap
+        col1=cm0(np.linspace(0,0.4,100))
+        w1=np.array(list(map(lambda x: np.linspace(x,1,28),col1[-1]))).transpose()
+        col2=cm0(np.linspace(0.6,1,100))
+        w2=np.array(list(map(lambda x: np.linspace(1,x,28),col2[0]))).transpose()
+        cols1=np.vstack([col1,w1,w2,col2])
+        return colors.LinearSegmentedColormap.from_list(name, cols1)
 
-    class colormaps:
-        def __init__(self):
-            pass
-        
-        def add_white_inbetween(colormap,name=None):
-            if name is None:
-                name = 'new_'+colormap.name
-            cm0=colormap
-            col1=cm0(np.linspace(0,0.4,100))
-            w1=np.array(list(map(lambda x: np.linspace(x,1,28),col1[-1]))).transpose()
-            col2=cm0(np.linspace(0.6,1,100))
-            w2=np.array(list(map(lambda x: np.linspace(1,x,28),col2[0]))).transpose()
-            cols1=np.vstack([col1,w1,w2,col2])
-            return colors.LinearSegmentedColormap.from_list(name, cols1)
+    def add_white_start(colormap,name=None):
+        if name is None:
+            name = 'new_'+colormap.name
+        col=colormap(np.linspace(0,1,200))
+        w=np.array(list(map(lambda x: np.linspace(1,x,30),col[0]))).transpose()
+        cols=np.vstack([w,col])
+        return colors.LinearSegmentedColormap.from_list(name, cols)   
 
-        def add_white_start(colormap,name=None):
-            if name is None:
-                name = 'new_'+colormap.name
-            col=colormap(np.linspace(0,1,200))
-            w=np.array(list(map(lambda x: np.linspace(1,x,30),col[0]))).transpose()
-            cols=np.vstack([w,col])
-            return colors.LinearSegmentedColormap.from_list(name, cols)   
+    def add_white_end(colormap,name=None):
+        if name is None:
+            name = 'new_'+colormap.name
+        col=colormap(np.linspace(0,1,200))
+        w=np.array(list(map(lambda x: np.linspace(x,1,30),col[-1]))).transpose()
+        cols=np.vstack([col,w])
+        return colors.LinearSegmentedColormap.from_list(name, cols) 
 
-        def add_white_end(colormap,name=None):
-            if name is None:
-                name = 'new_'+colormap.name
-            col=colormap(np.linspace(0,1,200))
-            w=np.array(list(map(lambda x: np.linspace(x,1,30),col[-1]))).transpose()
-            cols=np.vstack([col,w])
-            return colors.LinearSegmentedColormap.from_list(name, cols) 
+    div_tsurf = add_white_inbetween(cm.Spectral_r,name='div_tsurf')
+    div_tsurf_r = div_tsurf.reversed()
+    div_precip = add_white_inbetween(cm.twilight_shifted_r,name='div_precip')
+    div_precip_r = div_precip.reversed()
+    seq_tsurf_hot = add_white_start(cm.YlOrRd, name="seq_tsurf_hot")
+    seq_tsurf_hot_r = seq_tsurf_hot.reversed()
+    seq_tsurf_cold = add_white_end(cm.YlGnBu, name="seq_tsurf_cold")
+    seq_tsurf_cold_r = seq_tsurf_cold.reversed()
 
-        div_tsurf = add_white_inbetween(cm.Spectral_r,name='div_tsurf')
-        div_tsurf_r = div_tsurf.reversed()
-        div_precip = add_white_inbetween(cm.twilight_shifted_r,name='div_precip')
-        div_precip_r = div_precip.reversed()
-        seq_tsurf_hot = add_white_start(cm.YlOrRd, name="seq_tsurf_hot")
-        seq_tsurf_hot_r = seq_tsurf_hot.reversed()
-        seq_tsurf_cold = add_white_end(cm.YlGnBu, name="seq_tsurf_cold")
-        seq_tsurf_cold_r = seq_tsurf_cold.reversed()
+class srex_regions:
+    def __init__(self):
+        pass
 
-    class srex_regions:
-        def __init__(self):
-            pass
+    @staticmethod
+    def mask(name=None):
+        if name is None: name='srex_region'
+        return DataArray(self.mask(GREB.def_DataArray(),wrap_lon=True),name=name)
 
-        @staticmethod
-        def mask(name=None):
-            if name is None: name='srex_region'
-            return DataArray(srex_regions.mask(Constants.greb.def_DataArray(),wrap_lon=True),name=name)
-
-        @staticmethod
-        def plot(**kwargs):
-            if 'proj' not in kwargs: kwargs['proj']=ccrs.Robinson()
-            if 'label' not in kwargs: kwargs['label']='abbrev'
-            srex_regions.plot(**kwargs)
+    @staticmethod
+    def plot(**kwargs):
+        if 'proj' not in kwargs: kwargs['proj']=ccrs.Robinson()
+        if 'label' not in kwargs: kwargs['label']='abbrev'
+        self.plot(**kwargs)
 
 def input_(def_input,argv=1):
     '''
@@ -1598,7 +1634,7 @@ def group_by(x,time_group,copy=True,update_attrs=True):
         interp=True
     x = x.groupby('time.{}'.format(time_group)).mean(dim='time',keep_attrs=True).rename({'{}'.format(time_group):'time'})
     if interp:
-        x = x.interp(time=np.linspace(x.time[0]-0.5,x.time[-1]+0.5,nt),method='cubic',kwargs={'fill_value':'extrapolate'}).assign_coords(time=Constants.greb.t()[::int(730/nt)])
+        x = x.interp(time=np.linspace(x.time[0]-0.5,x.time[-1]+0.5,nt),method='cubic',kwargs={'fill_value':'extrapolate'}).assign_coords(time=GREB.t()[::int(730/nt)])
     f = DataArray if check_xarray(x,'DataArray') else Dataset
     return f(x,attrs=attrs)
 
@@ -2132,16 +2168,16 @@ def anomalies(x,x_base=None,copy=True,update_attrs=True):
     if x_base is None:
         if (check_xarray(x,'DataArray') and x.name == 'cloud') or \
             (check_xarray(x,'Dataset') and 'cloud' in list(x.data_vars.keys())):
-            ctrfile=Constants.greb.cloud_def_file()
+            ctrfile=GREB.cloud_def_file()
         elif (check_xarray(x,'DataArray') and x.name == 'solar') or \
             (check_xarray(x,'Dataset') and 'solar' in list(x.data_vars.keys())):
-            ctrfile=Constants.greb.solar_def_file()
+            ctrfile=GREB.solar_def_file()
         else:
-            ctrfile=Constants.greb.control_def_file()
+            ctrfile=GREB.control_def_file()
         if 'grouped_by' in x.attrs:
             x_base = from_binary(ctrfile,x.attrs['grouped_by'])
         elif (any(['annual_mean' in x.attrs,'seasonal_cycle' in x.attrs,'global_mean' in x.attrs,'rms' in x.attrs,'latitude_mean'])) or \
-            (ctrfile == Constants.greb.cloud_def_file()) or (ctrfile == Constants.greb.solar_def_file()):
+            (ctrfile == GREB.cloud_def_file()) or (ctrfile == GREB.solar_def_file()):
             x_base = from_binary(ctrfile)
         else:
             x_base = from_binary(ctrfile).apply(fun,keep_attrs=True)
@@ -2409,7 +2445,7 @@ def create_bin_ctl(path,vars):
     l=[v.shape for v in varvals]
     if not ( l.count(l[0]) == len(l) ):
         raise Exception('var1,var2,...,varN must be of the same size')
-    varvals = [Constants.greb.to_shape_for_bin(v,type=n) for v,n in zip(varvals,varnames)]
+    varvals = [GREB.to_shape_for_bin(v,type=n) for v,n in zip(varvals,varnames)]
     varvals=[np.float32(v.copy(order='C')) for v in varvals]
     tdef,ydef,xdef = varvals[0].shape
     # WRITE CTL FILE
@@ -2452,7 +2488,7 @@ def create_clouds(time = None, longitude = None, latitude = None, value = 1,
       Full path where the new cloud file ('.bin' and '.ctl' files)
       is saved.
       If not provided, the following default path is chosen:
-      '/Users/dmar0022/university/phd/greb-official/artificial_clouds/cld.artificial'
+      '/Users/dmar0022/university/phd/GREB-official/artificial_clouds/cld.artificial'
 
     Returns
     ----------
@@ -2465,14 +2501,14 @@ def create_clouds(time = None, longitude = None, latitude = None, value = 1,
         if isinstance(cloud_base,str):
             data=from_binary(cloud_base).cloud
         elif isinstance(cloud_base,np.ndarray):
-            data = Constants.greb.def_DataArray(data=Constants.greb.to_shape_for_bin(cloud_base),name='cloud')
+            data = GREB.def_DataArray(data=GREB.to_shape_for_bin(cloud_base),name='cloud')
         elif isinstance(cloud_base,xr.DataArray):
             data = DataArray(cloud_base,attrs=cloud_base.attrs)
         else:
             raise Exception('"cloud_base" must be a xarray.DataArray, numpy.ndarray,'+
                             ' or a valid path to the cloud file.')
     else:
-        data = Constants.greb.def_DataArray(name='cloud')
+        data = GREB.def_DataArray(name='cloud')
 
     mask=True
     # Check coordinates and constrain them
@@ -2500,7 +2536,7 @@ def create_clouds(time = None, longitude = None, latitude = None, value = 1,
         else:
             raise Exception(t_exc)
     else:
-        mask=mask&(Constants.greb.def_DataArray(np.full(Constants.greb.dt(),True),dims='time'))
+        mask=mask&(GREB.def_DataArray(np.full(GREB.dt(),True),dims='time'))
 
     # LONGITUDE
     if longitude is not None:
@@ -2527,7 +2563,7 @@ def create_clouds(time = None, longitude = None, latitude = None, value = 1,
         else:
             raise Exception(lon_exc)
     else:
-        mask=mask&(Constants.greb.def_DataArray(np.full(Constants.greb.dx(),True),dims='lon'))
+        mask=mask&(GREB.def_DataArray(np.full(GREB.dx(),True),dims='lon'))
 
     # LATITUDE
     if latitude is not None:
@@ -2553,7 +2589,7 @@ def create_clouds(time = None, longitude = None, latitude = None, value = 1,
         else:
             raise Exception(lat_exc)
     else:
-        mask=mask&(Constants.greb.def_DataArray(np.full(Constants.greb.dy(),True),dims='lat'))
+        mask=mask&(GREB.def_DataArray(np.full(GREB.dy(),True),dims='lat'))
 
     # Change values
     if (isinstance(value,float) or isinstance(value,int) or isinstance(value,np.ndarray)):
@@ -2570,7 +2606,7 @@ def create_clouds(time = None, longitude = None, latitude = None, value = 1,
     # Write .bin and .ctl files
     vars = {'cloud':data.values}
     if outpath is None:
-        outpath=Constants.greb.cloud_folder()+'/cld.artificial.ctl'
+        outpath=GREB.cloud_folder()+'/cld.artificial.ctl'
     create_bin_ctl(outpath,vars)
 
 def create_solar(time = None, latitude = None, value = 1,
@@ -2604,7 +2640,7 @@ def create_solar(time = None, latitude = None, value = 1,
       Full path where the new solar file ('.bin' and '.ctl' files)
       is saved.
       If not provided, the following default path is chosen:
-      '/Users/dmar0022/university/phd/greb-official/artificial_solar_radiation/sw.artificial'
+      '/Users/dmar0022/university/phd/GREB-official/artificial_solar_radiation/sw.artificial'
 
     Returns
     ----------
@@ -2617,14 +2653,14 @@ def create_solar(time = None, latitude = None, value = 1,
         if isinstance(solar_base,str):
             data=from_binary(solar_base).solar
         elif isinstance(solar_base,np.ndarray):
-            data = Constants.greb.def_DataArray(data=Constants.greb.to_shape_for_bin(solar_base,type='solar'),name='solar')
+            data = GREB.def_DataArray(data=GREB.to_shape_for_bin(solar_base,type='solar'),name='solar')
         elif isinstance(solar_base,xr.DataArray):
             data = DataArray(solar_base,attrs=solar_base.attrs)
         else:
             raise Exception('"solar_base" must be a xarray.DataArray, numpy.ndarray,'+
                             ' or a valid path to the solar file.')
     else:
-        data = Constants.greb.def_DataArray(name='solar',dims=('time','lat'))
+        data = GREB.def_DataArray(name='solar',dims=('time','lat'))
 
     mask=True
     # Check coordinates and constrain them
@@ -2652,7 +2688,7 @@ def create_solar(time = None, latitude = None, value = 1,
         else:
             raise Exception(t_exc)
     else:
-        mask=mask&(Constants.greb.def_DataArray(np.full(Constants.greb.dt(),True),dims='time'))
+        mask=mask&(GREB.def_DataArray(np.full(GREB.dt(),True),dims='time'))
 
     # LATITUDE
     if latitude is not None:
@@ -2678,7 +2714,7 @@ def create_solar(time = None, latitude = None, value = 1,
         else:
             raise Exception(lat_exc)
     else:
-        mask=mask&(Constants.greb.def_DataArray(np.full(Constants.greb.dy(),True),dims='lat'))
+        mask=mask&(GREB.def_DataArray(np.full(GREB.dy(),True),dims='lat'))
 
     # Change values
     if (isinstance(value,float) or isinstance(value,int) or isinstance(value,np.ndarray)):
@@ -2697,7 +2733,7 @@ def create_solar(time = None, latitude = None, value = 1,
     else:
         vars = {'solar':data.values}
     if outpath is None:
-        outpath=Constants.greb.solar_folder()+'/sw.artificial.ctl'
+        outpath=GREB.solar_folder()+'/sw.artificial.ctl'
     create_bin_ctl(outpath,vars)
 
 def data_from_binary(filename,parse=False,time_group=None):
@@ -2806,9 +2842,9 @@ def plot_annual_cycle(coord,*data,legend=True, title='Annual Cycle',
          ax.stock_img()
          ax.add_patch(patch(x,y))
 
-    i,j=Constants.greb.to_greb_indexes(*coord)
-    x=Constants.greb.t().tolist()
-    x=[Constants.greb.from_greb_time(a) for a in x]
+    i,j=GREB.to_greb_indexes(*coord)
+    x=GREB.t().tolist()
+    x=[GREB.from_greb_time(a) for a in x]
     for ind,d in enumerate(data):
         if not check_xarray(d,'DataArray'):
             exception_xarray(type = 'DataArray',varname='all data')
@@ -2865,10 +2901,10 @@ def plot_clouds_and_tsurf(*cloudfiles, years_of_simulation=50, coords = None,
     import matplotlib.ticker as ticker
 
     cloud = [from_binary(f,time_group='12h').cloud for f in cloudfiles]
-    cloud_ctr = from_binary(Constants.greb.cloud_def_file(),time_group='12h').cloud
-    tfiles = [Constants.greb.get_scenario_filename(f,years_of_simulation=years_of_simulation) for f in cloudfiles]
+    cloud_ctr = from_binary(GREB.cloud_def_file(),time_group='12h').cloud
+    tfiles = [GREB.get_scenario_filename(f,years_of_simulation=years_of_simulation) for f in cloudfiles]
     tsurf = [from_binary(f,time_group='12h').tsurf for f in tfiles]
-    tsurf_ctr = from_binary(Constants.greb.control_def_file(),time_group='12h').tsurf
+    tsurf_ctr = from_binary(GREB.control_def_file(),time_group='12h').tsurf
 
     cloud_anomaly = [c.anomalies(cloud_ctr) for c in cloud]
     tsurf_anomaly = [t.anomalies(tsurf_ctr) for t in tsurf]
@@ -3050,35 +3086,28 @@ def t_student_probability(x,y,season=None):
     p=DataArray(data=p,dims=dims,coords=coords)
     return p
 
-def add_evaporation(x):
-    '''
-    Function to add the variable "evaporation" to the Dataset.
-    This variable is computed by adding the 2 variables of the dataset "evaporation_flux_from_open_sea" and "evaporation_from_soil_surface".
-
-    Arguments
-    ----------
-    x : Dataset objects
-       Dataset to add the "evaporation" variable to.
-
-    Returns
-    ----------
-    xarray.Dataset
-
-    New Dataset containing the "evaporation" variable.
-    '''
-    
-    variables = ["evaporation_flux_from_open_sea","evaporation_from_soil_surface"]
-    for v in variables:
-        if v not in x.variables: raise Exception('Current Dataset doesn"t include the variable "{}".'.format(v))
-    return x.assign(evaporation=x[variables[0]].where(x[variables[0]] <= 100,0) + 
-                       x[variables[1]].where(x[variables[1]] <= 100,0))
-
 def open_dataarray(x,**open_dataarray_kwargs):
     '''
     Function analogous to xarray.open_dataarray which wraps the result in the custom DataArray class 
     '''
 
     return DataArray(xr.open_dataarray(x,**open_dataarray_kwargs))
+
+def open_mfdataset(x,**open_mfdataset_kwargs):
+    '''
+    Function analogous to xarray.open_mfdataset which parse the input, applying the following functions:
+        - Add_evaporation
+        - Rename_m01s09i231
+        - Split_w_wind
+    '''
+    d=xr.open_mfdataset(x,**open_mfdataset_kwargs)
+    if ("evaporation_flux_from_open_sea" in d) and ("evaporation_from_soil_surface" in d):
+        d=UM.add_evaporation(d)
+    if "m01s09i231" in d:
+        d=UM.rename_m01s09i231(d)
+    if "upward_air_velocity" in d:
+        d=UM.split_w_wind(d)
+    return d
 # ============================================================================ #
 # ============================================================================ #
 # ============================================================================ #
