@@ -331,11 +331,11 @@ class Dataset(xr.Dataset):
         return group_by(self,time_group,copy=copy,update_attrs=update_attrs)
 
     def srex_mean(self,copy=True):
-        mask=GREB.srex_regions.mask()
+        mask=GREB.SREX_regions.mask()
         if copy: self=self.copy()
         new=self.groupby(mask).apply(global_mean)
-        new.coords['srex_abbrev'] = ('srex_region', srex_regions.abbrevs)
-        new.coords['srex_name'] = ('srex_region', srex_regions.names)
+        new.coords['srex_abbrev'] = ('srex_region', SREX_regions.abbrevs)
+        new.coords['srex_name'] = ('srex_region', SREX_regions.names)
         return new
 
     def seasonal_time_series(self,first_month_num=None,update_attrs=True):
@@ -432,6 +432,169 @@ class DataArray(xr.DataArray):
                 statistics='all',
                 t_student=False,
                 nlev=None,
+                du= None,
+                coast_kwargs = None,
+                land_kwargs = None,
+                save_kwargs = None,
+                **contourf_kwargs):
+
+        '''
+        Plots GREB variables with associated color maps, scales and projections.
+
+        '''
+
+        def _get_var(x):
+            keys = x.attrs.keys()
+            name = x.name if x.name is not None else 'data'
+            if 'long_name' in keys:
+                title = x.attrs['long_name'] if x.attrs['long_name'] is not None else ''
+            else:
+                title = x.name if x.name is not None else ''
+            if 'units' in keys:
+                units = x.attrs['units'] if x.attrs['units'] is not None else ''
+            else:
+                units = ''
+            if 'annual_mean' in keys:
+                title = title + ' Annual Mean'
+                name=name+'.amean'
+            if 'seasonal_cycle' in keys:
+                title = title + ' Seasonal Cycle'
+                name=name+'.seascyc'
+                cmap = cm.RdBu_r
+            if 'anomalies' in keys:
+                title = title + ' Anomalies'
+                name=name+'.anom'
+            return title,name,units
+
+        param=self._get_param(nlev=nlev)
+        self=param['self']
+        if title is None: title = _get_var(self)[0]
+        if name is None: name = _get_var(self)[1]
+        if nlev is None: nlev=100
+        units = _get_var(self)[2]
+
+        if projection is None: projection = ccrs.Robinson()
+        elif not projection: projection = ccrs.PlateCarree()
+        if 'ax' not in contourf_kwargs:
+            contourf_kwargs['ax'] = plt.axes(projection=projection)
+        if 'cmap' not in contourf_kwargs:
+            contourf_kwargs['cmap'] = param['cmap']
+        if ('levels' not in contourf_kwargs) and ('norm' not in contourf_kwargs):    
+            if param['levels'] is None:
+                contourf_kwargs['levels'] = nlev
+            else:
+                contourf_kwargs['levels'] = param['levels']
+        if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
+        if contourf_kwargs['add_colorbar']==True:
+            cbar_kwargs = {'orientation':'horizontal', 'label':units}
+            if 'cbar_kwargs' not in contourf_kwargs:
+                contourf_kwargs["cbar_kwargs"] = cbar_kwargs
+                contourf_kwargs["cbar_kwargs"]['ticks'] = param['cbticks']
+            else:
+                if 'orientation' not in contourf_kwargs['cbar_kwargs']: contourf_kwargs['cbar_kwargs']['orientation'] = 'horizontal'
+                if 'label' not in contourf_kwargs['cbar_kwargs']: contourf_kwargs['cbar_kwargs']['label'] = units               
+            if du is not None:
+                umin=contourf_kwargs['levels'][0]
+                umax=contourf_kwargs['levels'][-1]
+                contourf_kwargs['cbar_kwargs'].update({"ticks":np.arange(umin,umax+du,du)})
+
+        if land_kwargs is not None:
+            land_kwargs = {'edgecolor':'face', 'facecolor':'black', **land_kwargs}
+        else:
+            land_kwargs = {'edgecolor':'face', 'facecolor':'black'}
+
+        if coast_kwargs is not None:
+            coast_kwargs = {**coast_kwargs}
+        else:
+            coast_kwargs = {}
+        if self.name == 'cloud':
+            coast_kwargs = {'edgecolor':[0,.5,0.3],**coast_kwargs}
+
+        if save_kwargs is not None:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
+        else:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight'}
+
+        im=self._to_contiguous_lon().plot.contourf(transform=ccrs.PlateCarree(),
+                                                    **contourf_kwargs)
+
+        plt.gca().add_feature(cfeature.COASTLINE,**coast_kwargs)
+        if (self.name == 'tocean'):
+            plt.gca().add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m'),
+                                  **land_kwargs)
+        if isinstance(statistics,list):
+            fs=statistics[1]
+            statistics=statistics[0]
+        else:
+            fs=12
+        if statistics == 'all':
+            gm=self.global_mean().values
+            rms=self.rms().values
+            txt = ('gmean = {:.3g}  |  rmse = {:.3g}').format(gm,rms)
+            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')
+        elif statistics == 'gmean':
+            gm=self.global_mean().values
+            txt = ('gmean = {:.3g}').format(gm)
+            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')
+        elif statistics == 'rms':
+            rms=self.rms().values
+            txt = ('rmse = {:.3g}').format(rms)
+            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')         
+        if isinstance(t_student,bool):
+            if t_student:
+                raise Exception('t_student must be False, or equal to either a dictionary or an '
+                        'xarray.DataArray containing t-student distribution probabilities.')
+        else:
+            if check_xarray(t_student,"DataArray"):
+                _check_shapes(t_student,self)
+                t_student = {"p":t_student}
+            elif isinstance(t_student,np.ndarray):
+                t_student = {"p":xr.DataArray(data=t_student,dims = ["latitude","longitude"], coords=[UM.latitude,UM.longitude])}
+            if isinstance(t_student,dict):
+                if "p" not in t_student:
+                    raise Exception('t_student must be contain "p" key, containing '
+                        'an xarray.DataArray with t-student distribution '
+                        'probabilities.\nTo obtain t_student distribution '
+                        'probabilities, you can use the "t_student_probability" function.')
+                elif isinstance(t_student["p"],np.ndarray):
+                    t_student["p"] = xr.DataArray(data=t_student["p"],dims = ["latitude","longitude"], coords=[UM.latitude,UM.longitude])
+                if "treshold" in t_student:
+                    if t_student["treshold"] > 1:
+                        raise Exception("Treshold must be <= 1")
+                else:
+                    t_student["treshold"]=0.05
+                if "hatches" not in t_student:
+                    t_student["hatches"]= '///'
+            else:
+                raise Exception('t_student must be either a dictionary or an '
+                        'xarray.DataArray containing t-student distribution probabilities.')
+            p=t_student["p"]
+            a=t_student["treshold"]
+            DataArray(p.where(p<a,0).where(p>=a,1))._to_contiguous_lon().plot.contourf(
+                                                ax=plt.gca(),
+                                                transform=ccrs.PlateCarree(),
+                                                levels=np.linspace(0,1,3),
+                                                hatches=['',t_student['hatches']],
+                                                alpha=0,
+                                                add_colorbar=False,
+                                                )
+        plt.title(title)
+        if outpath is not None:
+            plt.savefig(outpath, format = 'png',**save_kwargs)
+            # plt.close()
+        return im
+
+    def plotvar_2(self, projection = None,
+                outpath = None,
+                name = None,
+                title = None,
+                statistics='all',
+                t_student=False,
+                nlev=None,
+                du= None,
                 coast_kwargs = None,
                 land_kwargs = None,
                 save_kwargs = None,
@@ -487,8 +650,17 @@ class DataArray(xr.DataArray):
         if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
         if contourf_kwargs['add_colorbar']==True:
             cbar_kwargs = {'orientation':'horizontal', 'label':units}
-            if 'cbar_kwargs' in contourf_kwargs:
+            if 'cbar_kwargs' in contourf_kwargs:                
                 cbar_kwargs.update(contourf_kwargs['cbar_kwargs'])
+            else:
+                if du is not None and "ticks" not in contourf_kwargs['cbar_kwargs']:
+                    if ('levels' in contourf_kwargs):
+                        lev_kwargs=contourf_kwargs
+                    else:
+                        lev_kwargs=new_contourf_kwargs
+                    umin=lev_kwargs['levels'][0]
+                    umax=lev_kwargs['levels'][-1]
+                    contourf_kwargs['cbar_kwargs']["ticks"] = np.arange(umin,umax+du,du)    
             if ('ticks' not in cbar_kwargs):
                 cbar_kwargs['ticks'] = param['cbticks']
             new_contourf_kwargs['cbar_kwargs']=cbar_kwargs
@@ -955,11 +1127,11 @@ class DataArray(xr.DataArray):
         return group_by(self,time_group,copy=copy,update_attrs=update_attrs)
 
     def srex_mean(self,copy=True):
-        mask=self.srex_regions.mask()
+        mask=self.SREX_regions.mask()
         if copy: self=self.copy()
         new=self.groupby(mask).apply(global_mean)
-        new.coords['srex_abbrev'] = ('srex_region', srex_regions.abbrevs)
-        new.coords['srex_name'] = ('srex_region', srex_regions.names)
+        new.coords['srex_abbrev'] = ('srex_region', SREX_regions.abbrevs)
+        new.coords['srex_name'] = ('srex_region', SREX_regions.names)
         return new
 
     def seasonal_time_series(self,first_month_num=None,update_attrs=True):
@@ -1093,87 +1265,80 @@ class UM:
         d_overtuning=d_down-d_up
         return x.assign({"omega_up":d_up,"omega_down":d_down,"omega_overtuning":d_overtuning})
 
-
 class GREB:
     
     def __init__(self):
         pass
 
-    @staticmethod
-    def t():
-        bin2netCDF(self.cloud_def_file())
-        time=xr.open_dataset(self.cloud_def_file()+'.nc').time
-        os.remove(self.cloud_def_file()+'.nc')
-        return time
-
-    @staticmethod
+    @staticmethod 
     def lat():
-        return np.arange(-88.125,88.125+3.75,3.75)
+        return  np.arange(-88.125,88.125+3.75,3.75)
 
-    @staticmethod
+    @staticmethod 
     def lon():
-        return np.arange(0,360,3.75)
+        return  np.arange(0,360,3.75)
+
+    @staticmethod 
+    def t():
+        bin2netCDF(GREB.cloud_def_file())
+        time=xr.open_dataset(GREB.cloud_def_file()+'.nc').time
+        os.remove(GREB.cloud_def_file()+'.nc')
+        return time
 
     @staticmethod
     def dx():
-        return len(self.lon())
+        return len(GREB.lon())
 
     @staticmethod
     def dy():
-        return len(self.lat())
+        return len(GREB.lat())
 
     @staticmethod
     def dt():
-        return len(self.t())
-
-    @staticmethod
-    def time():
-
-        return time
+        return len(GREB.t())
 
     @staticmethod
     def greb_folder():
-        return "/Users/dmar0022/university/phd/GREB-official"
+        return "/Users/dmar0022/university/phd/greb-official"
 
     @staticmethod
     def figures_folder():
-        return self.greb_folder()+'/figures'
+        return GREB.greb_folder()+'/figures'
 
     @staticmethod
     def output_folder():
-        return self.greb_folder()+'/output'
+        return GREB.greb_folder()+'/output'
 
     @staticmethod
     def input_folder():
-        return self.greb_folder()+'/input'
+        return GREB.greb_folder()+'/input'
 
     @staticmethod
     def scenario_2xCO2(years_of_simulation=50):
-        return self.output_folder()+'/scenario.exp-20.2xCO2_{}yrs'.format(years_of_simulation)
+        return GREB.output_folder()+'/scenario.exp-20.2xCO2_{}yrs'.format(years_of_simulation)
 
-    @staticmethod
     def cloud_def_file():
-        return self.greb_folder()+'/input/isccp.cloud_cover.clim'
+        return GREB.greb_folder()+'/input/isccp.cloud_cover.clim'
 
     @staticmethod
     def solar_def_file():
-        return self.greb_folder()+'/input/solar_radiation.clim'
+        return GREB.greb_folder()+'/input/solar_radiation.clim'
 
     @staticmethod
     def cloud_folder():
-        return self.greb_folder()+'/artificial_clouds'
+        return GREB.greb_folder()+'/artificial_clouds'
 
     @staticmethod
     def solar_folder():
-        return self.greb_folder()+'/artificial_solar_radiation'
+        return GREB.greb_folder()+'/artificial_solar_radiation'
 
     @staticmethod
     def cloud_figures_folder():
-        return self.cloud_folder()+'/art_clouds_figures'
+        return GREB.cloud_folder()+'/art_clouds_figures'
 
     @staticmethod
     def control_def_file():
-        return self.output_folder()+'/control.default'
+        return GREB.output_folder()+'/control.default'
 
     @staticmethod
     def to_greb_grid(x, method='cubic'):
@@ -1198,7 +1363,7 @@ class GREB:
 
         '''
 
-        grebfile=from_binary(self.control_def_file()).mean('time')
+        grebfile=GREB.from_binary(GREB.control_def_file()).mean('time')
         return x.interp_like(grebfile,method=method)
 
     def def_DataArray(data=None,dims=None,coords=None,name=None,attrs=None):
@@ -1207,9 +1372,9 @@ class GREB:
         elif isinstance(dims,str):
             dims = [dims]
         if coords is None:
-            if 'time' in dims: time = self.t()
-            if 'lat' in dims: lat = self.lat()
-            if 'lon' in dims: lon = self.lon()
+            if 'time' in dims: time = GREB.t()
+            if 'lat' in dims: lat = GREB.lat()
+            if 'lon' in dims: lon = GREB.lon()
         scope = locals()
         if name is not None:
             if attrs is None:
@@ -1246,8 +1411,8 @@ class GREB:
         lon=np.array(lon)
         if np.any(lon<0) or np.any(lon>360):
             raise ValueError('lon value must be between 0 and 360 degrees')
-        lat_def = self.lat().tolist()
-        lon_def = self.lon().tolist()
+        lat_def = GREB.lat().tolist()
+        lon_def = GREB.lon().tolist()
         i = [lat_def.index(min(lat_def, key=lambda x:abs(x-la))) for la in lat] \
             if len(lat.shape) == 1 else lat_def.index(min(lat_def, key=lambda x:abs(x-lat)))
         j = [lon_def.index(min(lon_def, key=lambda x:abs(x-lo))) for lo in lon] \
@@ -1255,17 +1420,17 @@ class GREB:
         return i,j
 
     @staticmethod
-    def shape_for_bin(type='cloud'):
+    def _shape_for_bin(type='cloud'):
         if type == 'cloud' or type == 'r':
             # 'Shape must be in the form (tdef,ydef,xdef)'
-            return (self.dt(),self.dy(),self.dx())
+            return (GREB.dt(),GREB.dy(),GREB.dx())
         elif type == 'solar':
-            return (self.dt(),self.dy(),1)
+            return (GREB.dt(),GREB.dy(),1)
         else: raise Exception('type must be either "cloud" or "solar"')
 
     @staticmethod
     def to_shape_for_bin(data,type='cloud'):
-        def_sh = self.shape_for_bin(type)
+        def_sh = GREB._shape_for_bin(type)
         sh=data.shape
         if (len(sh) != 3) or len(set(sh)) != 3: raise Exception('data must be 3D, in the form {}x{}x{}'.format(def_sh[0],def_sh[1],def_sh[2]))
         if ((sh[0] not in def_sh) or (sh[1] not in def_sh) or (sh[2] not in def_sh)):
@@ -1336,7 +1501,7 @@ class GREB:
         # Control run or other (non-geoengineering) experiments
         if exp not in ['exp-{}'.format(n) for n in ['930','931','932','933']]:
             if forcing in ['cloud','solar']:
-                return eval('self.{}_def_file()'.format(forcing))
+                return eval('GREB.{}_def_file()'.format(forcing))
             else:
                 raise Exception('Specify forcing to be either "cloud" or "solar".')
         else:
@@ -1350,7 +1515,7 @@ class GREB:
                 raise Exception('Invalid forcing name "{}".\nForcing must be either "cloud" or "solar".'.format(forcing))
             # Get artificial forcing directory
             if output_path is None:
-                output_path = eval('self.{}_folder()'.format(forcing))
+                output_path = eval('GREB.{}_folder()'.format(forcing))
             # Get artificial path
             if forcing == 'cloud':
                 if exp == 'exp-930':
@@ -1358,10 +1523,10 @@ class GREB:
                     name=sc_filename[sc_filename.index(forcing_name):]
                     return os.path.join(output_path, name)
                 else:
-                    return eval('self.{}_def_file()'.format(forcing))
+                    return eval('GREB.{}_def_file()'.format(forcing))
             elif forcing == 'solar':
                 if exp == 'exp-930':
-                    return eval('self.{}_def_file()'.format(forcing))
+                    return eval('GREB.{}_def_file()'.format(forcing))
                 else:
                     forcing_name='sw.artificial'
                     name=sc_filename[sc_filename.index(forcing_name):]
@@ -1398,11 +1563,11 @@ class GREB:
             sc_name = 'scenario.exp-930.geoeng.'+forcing_filename_+'_{}yrs'.format(years_of_simulation)
         elif txt2 in forcing_filename_:
             sc_name = 'scenario.exp-931.geoeng.'+forcing_filename_+'_{}yrs'.format(years_of_simulation)
-        elif (forcing_filename == self.cloud_def_file()) or (forcing_filename == self.solar_def_file()):
+        elif (forcing_filename == GREB.cloud_def_file()) or (forcing_filename == GREB.solar_def_file()):
             sc_name = 'scenario.exp-20.2xCO2'+'_{}yrs'.format(years_of_simulation)
         else:
             raise Exception('The forcing file must contain either "cld.artificial" or "sw.artificial"')
-        if input_path is None: input_path = self.output_folder()
+        if input_path is None: input_path = GREB.output_folder()
         return os.path.join(input_path,sc_name)
 
     @staticmethod
@@ -1417,7 +1582,7 @@ class GREB:
         False = Ocean
 
         '''
-        mask=from_binary(self.input_folder()+'/global.topography.bin',parse=False).squeeze().topo
+        mask=GREB.from_binary(GREB.input_folder()+'/global.topography.bin',parse=False).squeeze().topo
         mask.data=np.where(mask<=0,False,True)
         return mask
     
@@ -1436,6 +1601,52 @@ class GREB:
         else:
             raise Exception("exp_num '{}' not supported".format(exp_num))
         return ".".join((n1,n2))
+
+    def from_binary(filename,time_group=None,parse=True):
+        """
+        Read binary file into an xarray.Dataset object.
+
+        Arguments
+        ----------
+        filename : str
+            Path to the ".bin" file to open
+
+        Parameters
+        ----------
+        time_group : str
+            Time grouping method to be chosen between: '12h','day','month','year','season'.
+            If chosen, the retrieved data belonging to the same time_group will be
+            averaged.
+            If "time_group" is smaller than the data time-resolution, a spline
+            interpolation is performed.
+        parse: Bool
+            Set to True (default) if you want the output to be parsed with the custom
+            "parse_greb_var" function, otherwise set to False.
+
+        Returns
+        ----------
+        xarray.Dataset
+            Dataset containing all the variables in the binary file.
+
+        """
+        if time_group not in ['12h','day','month','year','season',None]:
+            raise Exception('time_group must be one of the following:\n'+\
+                            '"12h","day","month","year","season"')
+        filename = rmext(filename)
+        bin2netCDF(filename)
+        data=xr.open_dataset(filename+'.nc')
+        attrs=data.attrs
+        os.remove(filename+'.nc')
+        if parse: data = parse_greb_var(data)
+        if 'time' in data.coords and data.time.shape[0] > 1:
+            t_res = np.timedelta64(data.time.values[1]-data.time.values[0],'D').item().total_seconds()/(3600*12)
+            if t_res > 62:
+                raise Exception('Impossible to group data by "{}".\n'.format(time_group)+
+                                'Could not understand the time resolution of the data.')
+        if time_group is not None:
+            return data.group_by(time_group,copy=False)
+        else:
+            return Dataset(data,attrs=attrs)
 
 class Colormaps:
     def __init__(self):
@@ -1477,7 +1688,7 @@ class Colormaps:
     seq_tsurf_cold = add_white_end(cm.YlGnBu, name="seq_tsurf_cold")
     seq_tsurf_cold_r = seq_tsurf_cold.reversed()
 
-class srex_regions:
+class SREX_regions:
     def __init__(self):
         pass
 
@@ -1491,97 +1702,6 @@ class srex_regions:
         if 'proj' not in kwargs: kwargs['proj']=ccrs.Robinson()
         if 'label' not in kwargs: kwargs['label']='abbrev'
         self.plot(**kwargs)
-
-def input_(def_input,argv=1):
-    '''
-    Function to set default inputs when running a script from Atom,
-    but still allowing those input to be set as arguments when running the script
-    from the command line.
-
-    Arguments
-    ----------
-    def_input : -
-        Default input to be set
-
-    Parameters
-    ----------
-    argv: Int
-        Position of the input in the arguments when launching the script from the
-        command line.
-        argv must be an integer >= 1
-
-    Returns
-    ----------
-    -
-        Returns the default input if the script is run in Atom, or if launched
-        from the command line with no argument in the position pointed by argv;
-        returns the argument input if, when launching the script from the command
-        line, there is an argument in the position pointed by argv.
-
-    '''
-
-    if (argv < 1 or np.all([not isinstance(argv,int),not isinstance(argv,np.int64),not isinstance(argv,np.int32)])):
-        raise Exception('argv must be an integer greater than 0')
-    try:
-        input=sys.argv[argv]
-        if ((argv == 1 and input == '-f') or (argv==2 and os.path.splitext(input)[1]=='.json')):
-            return rmext(def_input) if isinstance(def_input,str) else def_input
-        else:
-            return rmext(input) if isinstance(def_input,str) else type(def_input)(input)
-    except(IndexError): return rmext(def_input) if isinstance(def_input,str) else def_input
-
-def ignore_warnings():
-    '''
-    Suppress all the warning messages
-    '''
-    if not sys.warnoptions:
-        warnings.simplefilter("ignore")
-
-def from_binary(filename,time_group=None,parse=True):
-    """
-    Read binary file into an xarray.Dataset object.
-
-    Arguments
-    ----------
-    filename : str
-        Path to the ".bin" file to open
-
-    Parameters
-    ----------
-    time_group : str
-        Time grouping method to be chosen between: '12h','day','month','year','season'.
-        If chosen, the retrieved data belonging to the same time_group will be
-        averaged.
-        If "time_group" is smaller than the data time-resolution, a spline
-        interpolation is performed.
-    parse: Bool
-        Set to True (default) if you want the output to be parsed with the custom
-        "parse_greb_var" function, otherwise set to False.
-
-    Returns
-    ----------
-    xarray.Dataset
-        Dataset containing all the variables in the binary file.
-
-    """
-    if time_group not in ['12h','day','month','year','season',None]:
-        raise Exception('time_group must be one of the following:\n'+\
-                        '"12h","day","month","year","season"')
-    filename = rmext(filename)
-    bin2netCDF(filename)
-    data=xr.open_dataset(filename+'.nc')
-    attrs=data.attrs
-    os.remove(filename+'.nc')
-    if parse: data = parse_greb_var(data)
-    if 'time' in data.coords and data.time.shape[0] > 1:
-        t_res = np.timedelta64(data.time.values[1]-data.time.values[0],'D').item().total_seconds()/(3600*12)
-        if t_res > 62:
-            raise Exception('Impossible to group data by "{}".\n'.format(time_group)+
-                            'Could not understand the time resolution of the data.')
-    if time_group is not None:
-        return data.group_by(time_group,copy=False)
-    else:
-        return Dataset(data,attrs=attrs)
 
 def group_by(x,time_group,copy=True,update_attrs=True):
     """
@@ -2175,12 +2295,12 @@ def anomalies(x,x_base=None,copy=True,update_attrs=True):
         else:
             ctrfile=GREB.control_def_file()
         if 'grouped_by' in x.attrs:
-            x_base = from_binary(ctrfile,x.attrs['grouped_by'])
+            x_base = GREB.from_binary(ctrfile,x.attrs['grouped_by'])
         elif (any(['annual_mean' in x.attrs,'seasonal_cycle' in x.attrs,'global_mean' in x.attrs,'rms' in x.attrs,'latitude_mean'])) or \
             (ctrfile == GREB.cloud_def_file()) or (ctrfile == GREB.solar_def_file()):
-            x_base = from_binary(ctrfile)
+            x_base = GREB.from_binary(ctrfile)
         else:
-            x_base = from_binary(ctrfile).apply(fun,keep_attrs=True)
+            x_base = GREB.from_binary(ctrfile).apply(fun,keep_attrs=True)
         # Change to Celsius if needed
         temp = ['tsurf','tocean','tatmos']
         if check_xarray(x,'DataArray'):
@@ -2499,7 +2619,7 @@ def create_clouds(time = None, longitude = None, latitude = None, value = 1,
 
     if cloud_base is not None:
         if isinstance(cloud_base,str):
-            data=from_binary(cloud_base).cloud
+            data=GREB.from_binary(cloud_base).cloud
         elif isinstance(cloud_base,np.ndarray):
             data = GREB.def_DataArray(data=GREB.to_shape_for_bin(cloud_base),name='cloud')
         elif isinstance(cloud_base,xr.DataArray):
@@ -2651,7 +2771,7 @@ def create_solar(time = None, latitude = None, value = 1,
 
     if solar_base is not None:
         if isinstance(solar_base,str):
-            data=from_binary(solar_base).solar
+            data=GREB.from_binary(solar_base).solar
         elif isinstance(solar_base,np.ndarray):
             data = GREB.def_DataArray(data=GREB.to_shape_for_bin(solar_base,type='solar'),name='solar')
         elif isinstance(solar_base,xr.DataArray):
@@ -2770,17 +2890,17 @@ def data_from_binary(filename,parse=False,time_group=None):
     if time_group not in ['12h','day','month','year','season',None]:
         raise Exception('time_group must be one of the following:\n'+
                         '"12h","day","month","year","season".')
-    # If flag is not "raw" use _data_from_binary (more precise)
+    # If flag is not "raw" use _data_GREB.from_binary (more precise)
     def _data_from_binary(filename,parse=None,time_group=None):
     # 2nd version, slower but precise on time corrections
-        data = from_binary(filename,parse=parse,time_group=time_group)
+        data = GREB.from_binary(filename,parse=parse,time_group=time_group)
         keys = [d for d in data]
         vals = [data[k].values for k in keys]
         dic = dict(zip(keys,vals))
         return dic
 
     if parse or time_group is not None:
-        return _data_from_binary(filename,parse=parse,time_group=time_group)
+        return _data_GREB.from_binary(filename,parse=parse,time_group=time_group)
     filename = rmext(filename)
     with open(filename+'.ctl','r') as f:
         b=f.read().split('\n')
@@ -2900,11 +3020,11 @@ def plot_clouds_and_tsurf(*cloudfiles, years_of_simulation=50, coords = None,
     '''
     import matplotlib.ticker as ticker
 
-    cloud = [from_binary(f,time_group='12h').cloud for f in cloudfiles]
-    cloud_ctr = from_binary(GREB.cloud_def_file(),time_group='12h').cloud
+    cloud = [GREB.from_binary(f,time_group='12h').cloud for f in cloudfiles]
+    cloud_ctr = GREB.from_binary(GREB.cloud_def_file(),time_group='12h').cloud
     tfiles = [GREB.get_scenario_filename(f,years_of_simulation=years_of_simulation) for f in cloudfiles]
-    tsurf = [from_binary(f,time_group='12h').tsurf for f in tfiles]
-    tsurf_ctr = from_binary(GREB.control_def_file(),time_group='12h').tsurf
+    tsurf = [GREB.from_binary(f,time_group='12h').tsurf for f in tfiles]
+    tsurf_ctr = GREB.from_binary(GREB.control_def_file(),time_group='12h').tsurf
 
     cloud_anomaly = [c.anomalies(cloud_ctr) for c in cloud]
     tsurf_anomaly = [t.anomalies(tsurf_ctr) for t in tsurf]
