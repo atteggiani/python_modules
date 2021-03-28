@@ -507,8 +507,6 @@ class DataArray(xr.DataArray):
             coast_kwargs = {**coast_kwargs}
         else:
             coast_kwargs = {}
-        if self.name == 'cloud':
-            coast_kwargs = {'edgecolor':[0,.5,0.3],**coast_kwargs}
 
         if save_kwargs is not None:
             save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
@@ -1648,6 +1646,355 @@ class GREB:
         else:
             return Dataset(data,attrs=attrs)
 
+
+    def create_bin_ctl(path,vars):
+        '''
+        Creates '.bin' and '.ctl' file from Dictionary.
+
+        Arguments
+        ----------
+        path : str
+            complete path for the new '.bin' and '.ctl' files.
+        vars : dictionary
+            vars must be in the form {"namevar1":var1,"namevar2":var2,...,"namevarN":varN}
+            var1,var2,...varN must have the same shape
+
+        Returns
+        ----------
+        -
+            Creates '.bin' and '.ctl' file from Dictionary.
+
+        '''
+
+        def _create_bin(path,vars):
+            path = rmext(path)
+            with open(path+'.bin','wb') as f:
+                for v in vars:
+                    f.write(v)
+
+        def _create_ctl(path, varnames = None, xdef = None,
+                    ydef = None, zdef = 1, tdef = None):
+            path = rmext(path)
+            if not isinstance(varnames,list): varnames = [varnames]
+            nvars = len(varnames)
+            name = os.path.split(path)[1]+'.bin'
+            with open(path+'.ctl','w+') as f:
+                f.write('dset ^{}\n'.format(name))
+                f.write('undef 9.e27\n')
+                f.write('xdef  {} linear 0 3.75\n'.format(xdef))
+                f.write('ydef  {} linear -88.125 3.75\n'.format(ydef))
+                f.write('zdef   {} linear 1 1\n'.format(zdef))
+                f.write('tdef {} linear 00:00Z1jan2000  12hr\n'.format(tdef))
+                f.write('vars {}\n'.format(nvars))
+                for v in varnames:
+                    f.write('{0}  1 0 {0}\n'.format(v))
+                f.write('endvars\n')
+
+        if not isinstance(vars,dict):
+            raise Exception('vars must be a Dictionary type in the form: ' +
+                            '{"namevar1":var1,"namevar2":var2,...,"namevarN":varN}')
+        varnames = list(vars.keys())
+        nvars = len(varnames)
+        varvals = list(vars.values())
+        varvals=[v.values if check_xarray(v) else v for v in varvals]
+        l=[v.shape for v in varvals]
+        if not ( l.count(l[0]) == len(l) ):
+            raise Exception('var1,var2,...,varN must be of the same size')
+        varvals = [GREB.to_shape_for_bin(v,type=n) for v,n in zip(varvals,varnames)]
+        varvals=[np.float32(v.copy(order='C')) for v in varvals]
+        tdef,ydef,xdef = varvals[0].shape
+        # WRITE CTL FILE
+        _create_ctl(path, varnames = varnames, xdef=xdef,ydef=ydef,tdef=tdef)
+        # WRITE BIN FILE
+        _create_bin(path,vars = varvals)
+
+    def create_clouds(time = None, longitude = None, latitude = None, value = 1,
+                    cloud_base = None, outpath = None):
+        '''
+        Create an artificial cloud matrix file from scratch or by modifying an
+        existent cloud matrix.
+
+        Parameters
+        ----------
+        time : array of str
+        Datestr for the extent of the 'time' coordinate, in the form
+        [time_min, time_max].
+        Datestr format is '%y-%m-%d' (e.g. '2000-03-04' is 4th March 2000).
+
+        longitude : array of float
+        Extent of the 'lon' coordinate, in the form [lon_min, lon_max].
+        Format: degrees -> 0° to 360°.
+
+        latitude : array of float
+        Extent of the 'lat' coordinate, in the form [lat_min, lat_max].
+        Format: S-N degrees -> -90° to 90°.
+
+        value : DataArray, np.ndarray, float or callable
+        Cloud value to be assigned to the dimensions specified in time, latitude
+        and longitude.
+        If callable, equals the function to be applied element-wise to the
+        "cloud_base" (e.g. "lambda x: x*1.1" means cloud_base scaled by 1.1).
+
+        cloud_base : xarray.DataArray, np.ndarray or str
+        Array of the cloud to be used as a reference for the creation of the
+        new matrix or full path to the file ('.bin' and '.ctl' files).
+
+        outpath : str
+        Full path where the new cloud file ('.bin' and '.ctl' files)
+        is saved.
+        If not provided, the following default path is chosen:
+        '/Users/dmar0022/university/phd/GREB-official/artificial_clouds/cld.artificial'
+
+        Returns
+        ----------
+        -
+        Creates artificial cloud file ('.bin' and '.ctl' files).
+
+        '''
+        if cloud_base is not None:
+            if isinstance(cloud_base,str):
+                data=GREB.from_binary(cloud_base).cloud
+            elif isinstance(cloud_base,np.ndarray):
+                data = GREB.def_DataArray(data=GREB.to_shape_for_bin(cloud_base),name='cloud')
+            elif isinstance(cloud_base,xr.DataArray):
+                data = DataArray(cloud_base,attrs=cloud_base.attrs)
+            else:
+                raise Exception('"cloud_base" must be a xarray.DataArray, numpy.ndarray,'+
+                                ' or a valid path to the cloud file.')
+        else:
+            if callable(value):
+                data = GREB.from_binary(GREB.cloud_def_file()).cloud
+            else:            
+                data = GREB.def_DataArray(name='cloud')
+
+        mask=True
+        # Check coordinates and constrain them
+        # TIME
+        if time is not None:
+            t_exc = '"time" must be a np.datetime64, datestring or list of np.datetime64 istances or datestrings, in the form [time_min,time_max].\n'+\
+                    'Datestring must be in the format "%y-%m-%d".'
+            if isinstance(time,Iterable):
+                if not(isinstance(time,str)) and (len(time) > 2):
+                    raise Exception(t_exc)
+                if isinstance(time,str):
+                    time = np.datetime64(time)
+                    mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
+                else:
+                    time = [np.datetime64(t) for t in time]
+                    if time[0]==time[1]:
+                        time = time[0]
+                        mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
+                    elif time[1]>time[0]:
+                        mask = mask&(data.coords['time']>=time[0])&(data.coords['time']<=time[1])
+                    else:
+                        mask = mask&((data.coords['time']>=time[0])|(data.coords['time']<=time[1]))
+            elif isinstance(time,np.datetime64):
+                mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
+            else:
+                raise Exception(t_exc)
+        else:
+            mask=mask&(GREB.def_DataArray(np.full(GREB.dt(),True),dims='time'))
+
+        # LONGITUDE
+        if longitude is not None:
+            lon_exc = '"longitude" must be a number or in the form [lon_min,lon_max]'
+            if isinstance(longitude,Iterable):
+                if (isinstance(longitude,str)) or (len(longitude) > 2):
+                    raise Exception(lon_exc)
+                elif longitude[1]==longitude[0]:
+                    longitude = np.array(longitude[0])
+                    if (longitude<0) or (longitude>360):
+                        raise ValueError('"longitude" must be in the range [0÷360]')
+                    else:
+                        mask = mask&(data.coords['lon']==data.coords['lon'][np.argmin(abs(data.coords['lon']-longitude))])
+                elif longitude[1]>longitude[0]:
+                    mask = mask&((data.coords['lon']>=longitude[0])&(data.coords['lon']<=longitude[1]))
+                else:
+                    mask = mask&((data.coords['lon']>=longitude[0])|(data.coords['lon']<=longitude[1]))
+            elif (isinstance(longitude,float) or isinstance(longitude,int)):
+                longitude=np.array(longitude)
+                if np.any([longitude<0,longitude>360]):
+                    raise ValueError('"longitude" must be in the range [0÷360]')
+                else:
+                    mask = mask&(data.coords['lon']==data.coords['lon'][np.argmin(abs(data.coords['lon']-longitude))])
+            else:
+                raise Exception(lon_exc)
+        else:
+            mask=mask&(GREB.def_DataArray(np.full(GREB.dx(),True),dims='lon'))
+
+        # LATITUDE
+        if latitude is not None:
+            lat_exc = '"latitude" must be a number or in the form [lat_min,lat_max]'
+            if isinstance(latitude,Iterable):
+                if (isinstance(latitude,str)) or (len(latitude) > 2):
+                    raise Exception(lat_exc)
+                elif latitude[1]==latitude[0]:
+                    latitude = np.array(latitude[0])
+                    if np.any([latitude<-90,latitude>90]):
+                        raise ValueError('"latitude" must be in the range [-90÷90]')
+                    else:
+                        mask = mask&data.coords['lat']==data.coords['lat'][np.argmin(abs(data.coords['lat']-latitude))]
+                elif latitude[1]>latitude[0]:
+                    mask = mask&(data.coords['lat']>=latitude[0])&(data.coords['lat']<=latitude[1])
+                else:
+                    mask = mask&((data.coords['lat']>=latitude[0])|(data.coords['lat']<=latitude[1]))
+            elif (isinstance(latitude,float) or isinstance(latitude,int)):
+                if (latitude<-90) or (latitude>90):
+                    raise ValueError('"latitude" must be in the range [0÷360]')
+                else:
+                    mask = mask&(data.coords['lat']==data.coords['lat'][np.argmin(abs(data.coords['lat']-latitude))])
+            else:
+                raise Exception(lat_exc)
+        else:
+            mask=mask&(GREB.def_DataArray(np.full(GREB.dy(),True),dims='lat'))
+
+        # Change values
+        if (isinstance(value,float) or isinstance(value,int) or isinstance(value,np.ndarray)):
+            data=data.where(~mask,value)
+        elif isinstance(value,xr.DataArray):
+            data=data.where(~mask,value.values)
+        elif callable(value):
+            data=data.where(~mask,value(data))
+        else:
+            raise Exception('"value" must be a number, numpy.ndarray, xarray.DataArray or function to apply to the "cloud_base" (e.g. "lambda x: x*1.1")')
+        # Correct value above 1 or below 0
+        data=data.where(data<=1,1)
+        data=data.where(data>=0,0)
+        # Write .bin and .ctl files
+        vars = {'cloud':data.values}
+        if outpath is None:
+            outpath=GREB.cloud_folder()+'/cld.artificial.ctl'
+        GREB.create_bin_ctl(outpath,vars)
+
+    def create_solar(time = None, latitude = None, value = 1,
+                    solar_base = None, outpath = None):
+        '''
+        Create an artificial solar matrix file from scratch or by modifying an
+        existent solar matrix.
+
+        Parameters
+        ----------
+        time : array of str
+        Datestr for the extent of the 'time' coordinate, in the form
+        [time_min, time_max].
+        Datestr format is '%y-%m-%d' (e.g. '2000-03-04' is 4th March 2000).
+
+        latitude : array of float
+        Extent of the 'lat' coordinate, in the form [lat_min, lat_max].
+        Format: S-N degrees -> -90° to 90°.
+
+        value : float or callable
+        Solar value to be assigned to the dimensions specified in time and
+        latitude.
+        If callable, equals the function to be applied element-wise to the
+        "solar_base" (e.g. "lambda x: x*1.1" means solar_base scaled by 1.1).
+
+        solar_base : np.ndarray or str
+        Array of the solar to be used as a reference for the creation of the
+        new matrix or full path to the file ('.bin' and '.ctl' files).
+
+        outpath : str
+        Full path where the new solar file ('.bin' and '.ctl' files)
+        is saved.
+        If not provided, the following default path is chosen:
+        '/Users/dmar0022/university/phd/GREB-official/artificial_solar_radiation/sw.artificial'
+
+        Returns
+        ----------
+        -
+        Creates artificial solar file ('.bin' and '.ctl' files).
+
+        '''
+        if solar_base is not None:
+            if isinstance(solar_base,str):
+                data=GREB.from_binary(solar_base).solar
+            elif isinstance(solar_base,np.ndarray):
+                data = GREB.def_DataArray(data=GREB.to_shape_for_bin(solar_base,type='solar'),name='solar')
+            elif isinstance(solar_base,xr.DataArray):
+                data = DataArray(solar_base,attrs=solar_base.attrs)
+            else:
+                raise Exception('"solar_base" must be a xarray.DataArray, numpy.ndarray,'+
+                                ' or a valid path to the solar file.')
+        else:
+            if callable(value):
+                data = GREB.from_binary(GREB.solar_def_file()).solar
+            else:            
+                data = GREB.def_DataArray(name='solar',dims=('time','lat'))
+
+        mask=True
+        # Check coordinates and constrain them
+        # TIME
+        if time is not None:
+            t_exc = '"time" must be a np.datetime64, datestring or list of np.datetime64 istances or datestrings, in the form [time_min,time_max].\n'+\
+                    'Datestring must be in the format "%y-%m-%d".'
+            if isinstance(time,Iterable):
+                if not(isinstance(time,str)) and (len(time) > 2):
+                    raise Exception(t_exc)
+                if isinstance(time,str):
+                    time = np.datetime64(time)
+                    mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
+                else:
+                    time = [np.datetime64(t) for t in time]
+                    if time[0]==time[1]:
+                        time = time[0]
+                        mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
+                    elif time[1]>time[0]:
+                        mask = mask&(data.coords['time']>=time[0])&(data.coords['time']<=time[1])
+                    else:
+                        mask = mask&((data.coords['time']>=time[0])|(data.coords['time']<=time[1]))
+            elif isinstance(time,np.datetime64):
+                mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
+            else:
+                raise Exception(t_exc)
+        else:
+            mask=mask&(GREB.def_DataArray(np.full(GREB.dt(),True),dims='time'))
+
+        # LATITUDE
+        if latitude is not None:
+            lat_exc = '"latitude" must be a number or in the form [lat_min,lat_max]'
+            if isinstance(latitude,Iterable):
+                if (isinstance(latitude,str)) or (len(latitude) > 2):
+                    raise Exception(lat_exc)
+                elif latitude[1]==latitude[0]:
+                    latitude = np.array(latitude[0])
+                    if np.any([latitude<-90,latitude>90]):
+                        raise ValueError('"latitude" must be in the range [-90÷90]')
+                    else:
+                        mask = mask&data.coords['lat']==data.coords['lat'][np.argmin(abs(data.coords['lat']-latitude))]
+                elif latitude[1]>latitude[0]:
+                    mask = mask&(data.coords['lat']>=latitude[0])&(data.coords['lat']<=latitude[1])
+                else:
+                    mask = mask&((data.coords['lat']>=latitude[0])|(data.coords['lat']<=latitude[1]))
+            elif (isinstance(latitude,float) or isinstance(latitude,int)):
+                if (latitude<-90) or (latitude>90):
+                    raise ValueError('"latitude" must be in the range [0÷360]')
+                else:
+                    mask = mask&(data.coords['lat']==data.coords['lat'][np.argmin(abs(data.coords['lat']-latitude))])
+            else:
+                raise Exception(lat_exc)
+        else:
+            mask=mask&(GREB.def_DataArray(np.full(GREB.dy(),True),dims='lat'))
+
+        # Change values
+        if (isinstance(value,float) or isinstance(value,int) or isinstance(value,np.ndarray)):
+            data=data.where(~mask,value)
+        elif isinstance(value,xr.DataArray):
+            data=data.where(~mask,value.values)
+        elif callable(value):
+            data=data.where(~mask,value(data))
+        else:
+            raise Exception('"value" must be a number, numpy.ndarray, xarray.DataArray or function to apply to the "solar_base" (e.g. "lambda x: x*1.1")')
+        # Correct value below 0
+        data=data.where(data>=0,0)
+        # Write .bin and .ctl files
+        if len(data.shape) == 2:
+            vars = {'solar':data.values[...,np.newaxis]}
+        else:
+            vars = {'solar':data.values}
+        if outpath is None:
+            outpath=GREB.solar_folder()+'/sw.artificial.ctl'
+        GREB.create_bin_ctl(outpath,vars)
+
 class Colormaps:
     def __init__(self):
         pass
@@ -1687,6 +2034,10 @@ class Colormaps:
     seq_tsurf_hot_r = seq_tsurf_hot.reversed()
     seq_tsurf_cold = add_white_end(cm.YlGnBu, name="seq_tsurf_cold")
     seq_tsurf_cold_r = seq_tsurf_cold.reversed()
+    seq_precip_wet = add_white_start(cm.GnBu, name="seq_precip_wet")
+    seq_precip_wet_r = seq_precip_wet.reversed()
+    seq_precip_dry = add_white_end(cm.copper, name="seq_precip_dry")
+    seq_precip_dry_r = seq_precip_dry.reversed()
 
 class SREX_regions:
     def __init__(self):
@@ -1695,13 +2046,14 @@ class SREX_regions:
     @staticmethod
     def mask(name=None):
         if name is None: name='srex_region'
-        return DataArray(self.mask(GREB.def_DataArray(),wrap_lon=True),name=name)
+        return DataArray(srex_regions.mask(GREB.def_DataArray(),wrap_lon=True),name=name)
 
     @staticmethod
-    def plot(**kwargs):
-        if 'proj' not in kwargs: kwargs['proj']=ccrs.Robinson()
+    def plot(text_kws = dict(), **kwargs):
         if 'label' not in kwargs: kwargs['label']='abbrev'
-        self.plot(**kwargs)
+        if "fontsize" not in text_kws:
+            text_kws["fontsize"] = 8
+        srex_regions.plot(**text_kws,**kwargs)
 
 def group_by(x,time_group,copy=True,update_attrs=True):
     """
@@ -2374,701 +2726,6 @@ def to_Robinson_cartesian(lat,lon,lon_center = 0):
     y=np.where(lat < 0,-y,y)
 
     return x,y
-
-def multidim_regression(x,y,x_pred=None,axis=-1,multivariate=False):
-    '''
-    Performs Linear Regression over multi-dimensional arrays.
-    It doesn't loop over the dimensions but makes use of np.einsum to perform inner products.
-
-    Arguments
-    ----------
-    x : array of features to apply linear regression to.
-        The shape must be (M,N,...)
-    y : array of examples to train the linear regression.
-        The shape must be (M,1)
-
-
-    Parameters
-    ----------
-    x_pred : array of floats
-        array of points on which to perform the prediction
-    axis : int
-        dimension along which the regression will be performed
-    multivariate : bool
-        set to True if a multivariate regression is required.
-        In this case, the multiple features axis will be the one specified
-        by "axis" + 1.
-
-    Returns
-    ----------
-    If x_pred is provided, it returns an array with the predicted values.
-    Otherwise, it will return a function to be applied to the prediction values.
-
-    '''
-
-    def check_var(x):
-        if not isinstance(x,np.ndarray): x = np.array([x])
-        if len(x.shape) == 1: x= x.reshape([x.shape[0],1])
-        return x
-
-    def check_pred(x):
-        if not isinstance(x,np.ndarray): x = np.array([x])
-        if len(x.shape) == 1: x = x.reshape([1,x.shape[0]])
-        return x
-
-    def check_axis(x,axis,multivariate):
-        if axis == -1:
-            if multivariate:
-                if len(x.shape) > 2:
-                    axis = -2
-                else:
-                    axis = 0
-        if multivariate:
-            multivariate = axis+1
-            if multivariate >= len(x.shape):
-                raise Exception('Dimension mismatch')
-        else: multivariate = False
-
-        return axis,multivariate
-
-    def check_xy(x,y,axis,multivariate):
-        if len(x.shape)!=len(y.shape):
-            y = np.expand_dims(y,axis=axis+1)
-        dim1 = list(x.shape)
-        dim2 = list(y.shape)
-        if multivariate:
-            del dim1[multivariate]
-            del dim2[multivariate]
-        if not np.all(dim1==dim2):
-            raise Exception('x and y dimensions mismatch!')
-        return y
-
-    def check_xpred(x,x_pred,axis):
-        if len(x.shape)!=len(x_pred.shape):
-            x_pred = np.expand_dims(x_pred,axis=axis)
-        dim1  = list(x.shape)
-        dim2 = list(x_pred.shape)
-        del dim1[axis]
-        del dim2[axis]
-        if not np.all(dim1==dim2):
-            raise Exception('x and x_pred dimensions mismatch!')
-        return x_pred
-
-    def transpose_(V):
-        m=np.arange(len(V.shape)).tolist()
-        m = m[:-2] + [m[-1]] + [m[-2]]
-        return V.transpose(m)
-
-    def to_X(x,axis,multivariate):
-        X = to_Y(x,axis,multivariate)
-        return np.insert(X,0,1,axis = -1)
-
-    def to_Y(x,axis,multivariate):
-        m=np.arange(len(x.shape)).tolist()
-        try:
-            m.remove(axis)
-        except(ValueError):
-            del m[axis]
-        if multivariate:
-            try:
-                m.remove(multivariate)
-            except(ValueError):
-                del m[multivariate]
-            X = np.transpose(x,m+[axis,multivariate])
-        else:
-            X = np.transpose(x,m+[axis])[...,np.newaxis]
-        return X
-
-    def dot_(x,y):
-        if len(x.shape) > 2:
-            m1 = np.arange(len(x.shape)).tolist()
-            m2 = m1[:-2] + [m1[-1]] + [m1[-1]+1]
-            m3 = m1[:-1] + [m1[-1]+1]
-            return np.einsum(x,m1,y,m2,m3)
-        else:
-            return np.dot(x,y)
-
-    x = check_var(x)
-    y = check_var(y)
-    x_pred = check_pred(x_pred)
-    axis,multivariate = check_axis(x,axis,multivariate)
-    y = check_xy(x,y,axis,multivariate)
-    if x_pred is not None:
-        x_pred = check_xpred(x,x_pred,axis)
-        X_pred = to_X(x_pred,axis,multivariate)
-    Y=to_Y(y,axis,multivariate)
-    X=to_X(x,axis,multivariate)
-
-    if len(X.shape) > 2:
-        THETA=dot_(np.linalg.inv(dot_(transpose_(X),X)),dot_(transpose_(X),Y))
-        if x_pred is None:
-            return lambda t: dot_(to_X(t,axis,multivariate),THETA).squeeze()
-        else:
-            return dot_(X_pred,THETA).squeeze()
-    else:
-        THETA=np.linalg.inv(X.T.dot(X)).dot(X.T.dot(Y))
-        if x_pred is None:
-            return lambda t: to_X(t,axis,multivariate).dot(THETA)
-        else:
-            return x_pred.dot(THETA)
-
-def create_bin_ctl(path,vars):
-    '''
-    Creates '.bin' and '.ctl' file from Dictionary.
-
-    Arguments
-    ----------
-    path : str
-        complete path for the new '.bin' and '.ctl' files.
-    vars : dictionary
-        vars must be in the form {"namevar1":var1,"namevar2":var2,...,"namevarN":varN}
-        var1,var2,...varN must have the same shape
-
-    Returns
-    ----------
-    -
-        Creates '.bin' and '.ctl' file from Dictionary.
-
-    '''
-
-    def _create_bin(path,vars):
-        path = rmext(path)
-        with open(path+'.bin','wb') as f:
-            for v in vars:
-                f.write(v)
-
-    def _create_ctl(path, varnames = None, xdef = None,
-                   ydef = None, zdef = 1, tdef = None):
-        path = rmext(path)
-        if not isinstance(varnames,list): varnames = [varnames]
-        nvars = len(varnames)
-        name = os.path.split(path)[1]+'.bin'
-        with open(path+'.ctl','w+') as f:
-            f.write('dset ^{}\n'.format(name))
-            f.write('undef 9.e27\n')
-            f.write('xdef  {} linear 0 3.75\n'.format(xdef))
-            f.write('ydef  {} linear -88.125 3.75\n'.format(ydef))
-            f.write('zdef   {} linear 1 1\n'.format(zdef))
-            f.write('tdef {} linear 00:00Z1jan2000  12hr\n'.format(tdef))
-            f.write('vars {}\n'.format(nvars))
-            for v in varnames:
-                f.write('{0}  1 0 {0}\n'.format(v))
-            f.write('endvars\n')
-
-    if not isinstance(vars,dict):
-        raise Exception('vars must be a Dictionary type in the form: ' +
-                        '{"namevar1":var1,"namevar2":var2,...,"namevarN":varN}')
-    varnames = list(vars.keys())
-    nvars = len(varnames)
-    varvals = list(vars.values())
-    varvals=[v.values if check_xarray(v) else v for v in varvals]
-    l=[v.shape for v in varvals]
-    if not ( l.count(l[0]) == len(l) ):
-        raise Exception('var1,var2,...,varN must be of the same size')
-    varvals = [GREB.to_shape_for_bin(v,type=n) for v,n in zip(varvals,varnames)]
-    varvals=[np.float32(v.copy(order='C')) for v in varvals]
-    tdef,ydef,xdef = varvals[0].shape
-    # WRITE CTL FILE
-    _create_ctl(path, varnames = varnames, xdef=xdef,ydef=ydef,tdef=tdef)
-    # WRITE BIN FILE
-    _create_bin(path,vars = varvals)
-
-def create_clouds(time = None, longitude = None, latitude = None, value = 1,
-                  cloud_base = None, outpath = None):
-    '''
-    Create an artificial cloud matrix file from scratch or by modifying an
-    existent cloud matrix.
-
-    Parameters
-    ----------
-    time : array of str
-      Datestr for the extent of the 'time' coordinate, in the form
-      [time_min, time_max].
-      Datestr format is '%y-%m-%d' (e.g. '2000-03-04' is 4th March 2000).
-
-    longitude : array of float
-      Extent of the 'lon' coordinate, in the form [lon_min, lon_max].
-      Format: degrees -> 0° to 360°.
-
-    latitude : array of float
-      Extent of the 'lat' coordinate, in the form [lat_min, lat_max].
-      Format: S-N degrees -> -90° to 90°.
-
-    value : DataArray, np.ndarray, float or callable
-      Cloud value to be assigned to the dimensions specified in time, latitude
-      and longitude.
-      If callable, equals the function to be applied element-wise to the
-      "cloud_base" (e.g. "lambda x: x*1.1" means cloud_base scaled by 1.1).
-
-    cloud_base : xarray.DataArray, np.ndarray or str
-      Array of the cloud to be used as a reference for the creation of the
-      new matrix or full path to the file ('.bin' and '.ctl' files).
-
-    outpath : str
-      Full path where the new cloud file ('.bin' and '.ctl' files)
-      is saved.
-      If not provided, the following default path is chosen:
-      '/Users/dmar0022/university/phd/GREB-official/artificial_clouds/cld.artificial'
-
-    Returns
-    ----------
-    -
-      Creates artificial cloud file ('.bin' and '.ctl' files).
-
-    '''
-
-    if cloud_base is not None:
-        if isinstance(cloud_base,str):
-            data=GREB.from_binary(cloud_base).cloud
-        elif isinstance(cloud_base,np.ndarray):
-            data = GREB.def_DataArray(data=GREB.to_shape_for_bin(cloud_base),name='cloud')
-        elif isinstance(cloud_base,xr.DataArray):
-            data = DataArray(cloud_base,attrs=cloud_base.attrs)
-        else:
-            raise Exception('"cloud_base" must be a xarray.DataArray, numpy.ndarray,'+
-                            ' or a valid path to the cloud file.')
-    else:
-        data = GREB.def_DataArray(name='cloud')
-
-    mask=True
-    # Check coordinates and constrain them
-    # TIME
-    if time is not None:
-        t_exc = '"time" must be a np.datetime64, datestring or list of np.datetime64 istances or datestrings, in the form [time_min,time_max].\n'+\
-                'Datestring must be in the format "%y-%m-%d".'
-        if isinstance(time,Iterable):
-            if not(isinstance(time,str)) and (len(time) > 2):
-                raise Exception(t_exc)
-            if isinstance(time,str):
-                time = np.datetime64(time)
-                mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
-            else:
-                time = [np.datetime64(t) for t in time]
-                if time[0]==time[1]:
-                    time = time[0]
-                    mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
-                elif time[1]>time[0]:
-                    mask = mask&(data.coords['time']>=time[0])&(data.coords['time']<=time[1])
-                else:
-                    mask = mask&((data.coords['time']>=time[0])|(data.coords['time']<=time[1]))
-        elif isinstance(time,np.datetime64):
-            mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
-        else:
-            raise Exception(t_exc)
-    else:
-        mask=mask&(GREB.def_DataArray(np.full(GREB.dt(),True),dims='time'))
-
-    # LONGITUDE
-    if longitude is not None:
-        lon_exc = '"longitude" must be a number or in the form [lon_min,lon_max]'
-        if isinstance(longitude,Iterable):
-            if (isinstance(longitude,str)) or (len(longitude) > 2):
-                raise Exception(lon_exc)
-            elif longitude[1]==longitude[0]:
-                longitude = np.array(longitude[0])
-                if (longitude<0) or (longitude>360):
-                    raise ValueError('"longitude" must be in the range [0÷360]')
-                else:
-                    mask = mask&(data.coords['lon']==data.coords['lon'][np.argmin(abs(data.coords['lon']-longitude))])
-            elif longitude[1]>longitude[0]:
-                mask = mask&((data.coords['lon']>=longitude[0])&(data.coords['lon']<=longitude[1]))
-            else:
-                mask = mask&((data.coords['lon']>=longitude[0])|(data.coords['lon']<=longitude[1]))
-        elif (isinstance(longitude,float) or isinstance(longitude,int)):
-            longitude=np.array(longitude)
-            if np.any([longitude<0,longitude>360]):
-                raise ValueError('"longitude" must be in the range [0÷360]')
-            else:
-                mask = mask&(data.coords['lon']==data.coords['lon'][np.argmin(abs(data.coords['lon']-longitude))])
-        else:
-            raise Exception(lon_exc)
-    else:
-        mask=mask&(GREB.def_DataArray(np.full(GREB.dx(),True),dims='lon'))
-
-    # LATITUDE
-    if latitude is not None:
-        lat_exc = '"latitude" must be a number or in the form [lat_min,lat_max]'
-        if isinstance(latitude,Iterable):
-            if (isinstance(latitude,str)) or (len(latitude) > 2):
-                raise Exception(lat_exc)
-            elif latitude[1]==latitude[0]:
-                latitude = np.array(latitude[0])
-                if np.any([latitude<-90,latitude>90]):
-                    raise ValueError('"latitude" must be in the range [-90÷90]')
-                else:
-                    mask = mask&data.coords['lat']==data.coords['lat'][np.argmin(abs(data.coords['lat']-latitude))]
-            elif latitude[1]>latitude[0]:
-                mask = mask&(data.coords['lat']>=latitude[0])&(data.coords['lat']<=latitude[1])
-            else:
-                mask = mask&((data.coords['lat']>=latitude[0])|(data.coords['lat']<=latitude[1]))
-        elif (isinstance(latitude,float) or isinstance(latitude,int)):
-            if (latitude<-90) or (latitude>90):
-                raise ValueError('"latitude" must be in the range [0÷360]')
-            else:
-                mask = mask&(data.coords['lat']==data.coords['lat'][np.argmin(abs(data.coords['lat']-latitude))])
-        else:
-            raise Exception(lat_exc)
-    else:
-        mask=mask&(GREB.def_DataArray(np.full(GREB.dy(),True),dims='lat'))
-
-    # Change values
-    if (isinstance(value,float) or isinstance(value,int) or isinstance(value,np.ndarray)):
-        data=data.where(~mask,value)
-    elif isinstance(value,xr.DataArray):
-        data=data.where(~mask,value.values)
-    elif callable(value):
-        data=data.where(~mask,value(data))
-    else:
-        raise Exception('"value" must be a number, numpy.ndarray, xarray.DataArray or function to apply to the "cloud_base" (e.g. "lambda x: x*1.1")')
-    # Correct value above 1 or below 0
-    data=data.where(data<=1,1)
-    data=data.where(data>=0,0)
-    # Write .bin and .ctl files
-    vars = {'cloud':data.values}
-    if outpath is None:
-        outpath=GREB.cloud_folder()+'/cld.artificial.ctl'
-    create_bin_ctl(outpath,vars)
-
-def create_solar(time = None, latitude = None, value = 1,
-                  solar_base = None, outpath = None):
-    '''
-    Create an artificial solar matrix file from scratch or by modifying an
-    existent solar matrix.
-
-    Parameters
-    ----------
-    time : array of str
-      Datestr for the extent of the 'time' coordinate, in the form
-      [time_min, time_max].
-      Datestr format is '%y-%m-%d' (e.g. '2000-03-04' is 4th March 2000).
-
-    latitude : array of float
-      Extent of the 'lat' coordinate, in the form [lat_min, lat_max].
-      Format: S-N degrees -> -90° to 90°.
-
-    value : float or callable
-      Solar value to be assigned to the dimensions specified in time and
-      latitude.
-      If callable, equals the function to be applied element-wise to the
-      "solar_base" (e.g. "lambda x: x*1.1" means solar_base scaled by 1.1).
-
-    solar_base : np.ndarray or str
-      Array of the solar to be used as a reference for the creation of the
-      new matrix or full path to the file ('.bin' and '.ctl' files).
-
-    outpath : str
-      Full path where the new solar file ('.bin' and '.ctl' files)
-      is saved.
-      If not provided, the following default path is chosen:
-      '/Users/dmar0022/university/phd/GREB-official/artificial_solar_radiation/sw.artificial'
-
-    Returns
-    ----------
-    -
-      Creates artificial solar file ('.bin' and '.ctl' files).
-
-    '''
-
-    if solar_base is not None:
-        if isinstance(solar_base,str):
-            data=GREB.from_binary(solar_base).solar
-        elif isinstance(solar_base,np.ndarray):
-            data = GREB.def_DataArray(data=GREB.to_shape_for_bin(solar_base,type='solar'),name='solar')
-        elif isinstance(solar_base,xr.DataArray):
-            data = DataArray(solar_base,attrs=solar_base.attrs)
-        else:
-            raise Exception('"solar_base" must be a xarray.DataArray, numpy.ndarray,'+
-                            ' or a valid path to the solar file.')
-    else:
-        data = GREB.def_DataArray(name='solar',dims=('time','lat'))
-
-    mask=True
-    # Check coordinates and constrain them
-    # TIME
-    if time is not None:
-        t_exc = '"time" must be a np.datetime64, datestring or list of np.datetime64 istances or datestrings, in the form [time_min,time_max].\n'+\
-                'Datestring must be in the format "%y-%m-%d".'
-        if isinstance(time,Iterable):
-            if not(isinstance(time,str)) and (len(time) > 2):
-                raise Exception(t_exc)
-            if isinstance(time,str):
-                time = np.datetime64(time)
-                mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
-            else:
-                time = [np.datetime64(t) for t in time]
-                if time[0]==time[1]:
-                    time = time[0]
-                    mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
-                elif time[1]>time[0]:
-                    mask = mask&(data.coords['time']>=time[0])&(data.coords['time']<=time[1])
-                else:
-                    mask = mask&((data.coords['time']>=time[0])|(data.coords['time']<=time[1]))
-        elif isinstance(time,np.datetime64):
-            mask = mask&data.coords['time']==data.coords['time'][np.argmin(abs(data.coords['time']-time))]
-        else:
-            raise Exception(t_exc)
-    else:
-        mask=mask&(GREB.def_DataArray(np.full(GREB.dt(),True),dims='time'))
-
-    # LATITUDE
-    if latitude is not None:
-        lat_exc = '"latitude" must be a number or in the form [lat_min,lat_max]'
-        if isinstance(latitude,Iterable):
-            if (isinstance(latitude,str)) or (len(latitude) > 2):
-                raise Exception(lat_exc)
-            elif latitude[1]==latitude[0]:
-                latitude = np.array(latitude[0])
-                if np.any([latitude<-90,latitude>90]):
-                    raise ValueError('"latitude" must be in the range [-90÷90]')
-                else:
-                    mask = mask&data.coords['lat']==data.coords['lat'][np.argmin(abs(data.coords['lat']-latitude))]
-            elif latitude[1]>latitude[0]:
-                mask = mask&(data.coords['lat']>=latitude[0])&(data.coords['lat']<=latitude[1])
-            else:
-                mask = mask&((data.coords['lat']>=latitude[0])|(data.coords['lat']<=latitude[1]))
-        elif (isinstance(latitude,float) or isinstance(latitude,int)):
-            if (latitude<-90) or (latitude>90):
-                raise ValueError('"latitude" must be in the range [0÷360]')
-            else:
-                mask = mask&(data.coords['lat']==data.coords['lat'][np.argmin(abs(data.coords['lat']-latitude))])
-        else:
-            raise Exception(lat_exc)
-    else:
-        mask=mask&(GREB.def_DataArray(np.full(GREB.dy(),True),dims='lat'))
-
-    # Change values
-    if (isinstance(value,float) or isinstance(value,int) or isinstance(value,np.ndarray)):
-        data=data.where(~mask,value)
-    elif isinstance(value,xr.DataArray):
-        data=data.where(~mask,value.values)
-    elif callable(value):
-        data=data.where(~mask,value(data))
-    else:
-        raise Exception('"value" must be a number, numpy.ndarray, xarray.DataArray or function to apply to the "solar_base" (e.g. "lambda x: x*1.1")')
-    # Correct value below 0
-    data=data.where(data>=0,0)
-    # Write .bin and .ctl files
-    if len(data.shape) == 2:
-        vars = {'solar':data.values[...,np.newaxis]}
-    else:
-        vars = {'solar':data.values}
-    if outpath is None:
-        outpath=GREB.solar_folder()+'/sw.artificial.ctl'
-    create_bin_ctl(outpath,vars)
-
-def data_from_binary(filename,parse=False,time_group=None):
-    # 1st version, quicker but not precise on time corrections
-    '''
-    Get data from a binary ('.bin') file.
-
-    Arguments
-    ----------
-    filename : str
-        Path to the binary ('.bin') file.
-
-    Parameters
-    ----------
-    parse: Bool
-        Set to True if you want the output to be parsed with the custom
-        "parse_greb_var" function, otherwise set to False (default).
-    time_group : str
-        Time grouping method to be chosen between: '12h','day','month','year','season'.
-        If chosen, the retrieved data belonging to the same time_group will be
-        averaged.
-        If "time_group" is smaller than the data time-resolution, a spline
-        interpolation is performed.
-
-    Returns
-    ----------
-    Dictionary
-        Dictionary of the data stored in the binary, in the form:
-        {'varname1':var1,'varname2':var2,...,'varnameN':varN}
-
-    '''
-
-    # CHECK FLAGS
-    if time_group not in ['12h','day','month','year','season',None]:
-        raise Exception('time_group must be one of the following:\n'+
-                        '"12h","day","month","year","season".')
-    # If flag is not "raw" use _data_GREB.from_binary (more precise)
-    def _data_from_binary(filename,parse=None,time_group=None):
-    # 2nd version, slower but precise on time corrections
-        data = GREB.from_binary(filename,parse=parse,time_group=time_group)
-        keys = [d for d in data]
-        vals = [data[k].values for k in keys]
-        dic = dict(zip(keys,vals))
-        return dic
-
-    if parse or time_group is not None:
-        return _data_GREB.from_binary(filename,parse=parse,time_group=time_group)
-    filename = rmext(filename)
-    with open(filename+'.ctl','r') as f:
-        b=f.read().split('\n')
-    ind = np.where(list(map(lambda x: 'vars' in x.split(),b)))[0][0]
-    vars=int(b[ind].split()[1])
-    dt = int(b[np.where(list(map(lambda x: 'tdef' in x.split(),b)))[0][0]].split()[1])
-    dx = int(b[np.where(list(map(lambda x: 'xdef' in x.split(),b)))[0][0]].split()[1])
-    dy = int(b[np.where(list(map(lambda x: 'ydef' in x.split(),b)))[0][0]].split()[1])
-    keys = []
-    for i in np.arange(vars):
-        keys.append(b[ind+1+i].split()[0])
-    with open(filename+'.bin','rb') as f:
-        v = np.fromfile(f,dtype=np.float32).reshape(dt,vars,dy,dx).transpose(1,0,2,3)
-        vals=[v[i,...] for i in np.arange(vars)]
-    dic = dict(zip(keys,vals))
-    return dic
-
-def plot_annual_cycle(coord,*data,legend=True, title='Annual Cycle',
-                      draw_point_flag = True):
-    '''
-    Plot annual cycle for a specific point
-
-    Arguments
-    ----------
-    coord : tuple
-        Tuple of the lat/lon values for the point to plot.
-    data : DataArray
-        DataArray of the data you want to plot. Further DataArrays can be added
-        after the first to overlay multiple data plots for comparison.
-        (e.g. plot_annual_cicle(...,data1,data2,..,dataN,...))
-
-    Parameters
-    ----------
-    legend: Bool
-        Set to True (default) if you want the legend to be displayed in the plot.
-    var : str
-        If clouds are being plotted, can be set to 'cloud' in order to plot the
-        values with the proper axes extent.
-    draw_point_flag : Bool
-        Set to True (default) if you want to plot the position of the specified
-        coordinates on the earth.
-
-    Returns
-    ----------
-    -
-        Graph of the annual cycle, for the specified point and data in input.
-
-    '''
-
-    from matplotlib.patheffects import Stroke
-    import matplotlib.dates as mdates
-    import matplotlib.patches as mpatches
-
-    def draw_point(lat,lon,ax=None):
-         x,y = to_Robinson_cartesian(lat,lon)
-         patch = lambda x,y: mpatches.Circle((x,y), radius=6e5, color = 'red',
-                                                      transform=ccrs.Robinson())
-         ax = plt.axes(projection=ccrs.Robinson()) if ax is None else plt.gca()
-         ax.stock_img()
-         ax.add_patch(patch(x,y))
-
-    i,j=GREB.to_greb_indexes(*coord)
-    x=GREB.t().tolist()
-    x=[GREB.from_greb_time(a) for a in x]
-    for ind,d in enumerate(data):
-        if not check_xarray(d,'DataArray'):
-            exception_xarray(type = 'DataArray',varname='all data')
-        y=d.isel(lat=i,lon=j)
-        plt.plot(x,y,label = '{}'.format(ind+1))
-    if legend: plt.legend(loc = 'lower left',bbox_to_anchor=(0,1.001))
-    plt.grid()
-    plt.title(title,fontsize=15)
-
-    if data[0].name == 'cloud':
-        plt.ylim([-0.02,1.02])
-        m1,m2=plt.xlim()
-        plt.hlines(0,m1-100,m2+100,linestyles='--',colors='black',linewidth=0.7)
-        plt.hlines(1,m1-100,m2+100,linestyles='--',colors='black',linewidth=0.7)
-        plt.xlim([m1,m2])
-    plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
-    plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%b'))
-
-    if draw_point_flag:
-        # Create an inset GeoAxes showing the location of the Point.
-        sub_ax = plt.axes([0.8, 0.9, 0.2, 0.2], projection=ccrs.Robinson())
-        sub_ax.outline_patch.set_path_effects([Stroke(linewidth=1.5)])
-        draw_point(*coord,sub_ax)
-
-def plot_clouds_and_tsurf(*cloudfiles, years_of_simulation=50, coords = None,
-                          labels = None):
-    '''
-    Plot the annual cycle of clouds along with the tsurf response, for the
-    specified points.
-
-    Arguments
-    ----------
-    cloudfiles : str
-        Path to the clouds data
-
-    Parameters
-    ----------
-    years_of_simulation: int
-        Number of years for which the forcing simulation has been run
-    coords : tuple or list of tuples.
-        Lat/Lon coordinates of the point(s) to plot. If not provided the following
-        default points will be plotted:
-        [(42,12.5),(-37.8,145),(-80,0),(80,0),(0,230)]
-    labels : str or list of str
-        Legend labels for the plot.
-
-    Returns
-    ----------
-    -
-        Graph(s) of the clouds and tsurf response annual cycle, for the specified
-        point(s) and data in input.
-
-    '''
-    import matplotlib.ticker as ticker
-
-    cloud = [GREB.from_binary(f,time_group='12h').cloud for f in cloudfiles]
-    cloud_ctr = GREB.from_binary(GREB.cloud_def_file(),time_group='12h').cloud
-    tfiles = [GREB.get_scenario_filename(f,years_of_simulation=years_of_simulation) for f in cloudfiles]
-    tsurf = [GREB.from_binary(f,time_group='12h').tsurf for f in tfiles]
-    tsurf_ctr = GREB.from_binary(GREB.control_def_file(),time_group='12h').tsurf
-
-    cloud_anomaly = [c.anomalies(cloud_ctr) for c in cloud]
-    tsurf_anomaly = [t.anomalies(tsurf_ctr) for t in tsurf]
-    if coords is None:
-        coords = [(42,12.5),(-37.8,145),(-80,0),(80,0),(0,230)]
-    gs = gridspec.GridSpec(2, 2, wspace=0.25, hspace=0.4)
-
-    for coord in coords:
-        plt.figure()
-        ax1 = plt.subplot(gs[0, 0])
-        plot_annual_cycle(coord,*cloud_anomaly)
-        ax1.set_ylim([-1,1])
-        ax1.set_title('cloud anomaly annual cycle',fontsize=10)
-        l=ax1.get_legend()
-        if labels is not None:
-            for a,label in zip(l.get_texts(),labels): a.set_text(label)
-        l.set_bbox_to_anchor([-0.18,1.2])
-        for tick in ax1.xaxis.get_major_ticks(): tick.label.set_fontsize(6.5)
-
-        ax2 = plt.subplot(gs[0,1])
-        plot_annual_cycle(coord,*tsurf_anomaly,draw_point_flag=False)
-        ax2.set_ylim([-5,5])
-        ax2.set_title('tsurf anomaly annual cycle',fontsize=10)
-        ax2.get_legend().remove()
-        for tick in ax2.xaxis.get_major_ticks(): tick.label.set_fontsize(6.5)
-        ax2.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.1f'))
-
-        ax3 = plt.subplot(gs[1, 0])
-        plot_annual_cycle(coord,*cloud,draw_point_flag=False)
-        ax3.set_ylim([0,1])
-        ax3.set_title('cloud annual cycle',fontsize=10)
-        ax3.get_legend().remove()
-        for tick in ax3.xaxis.get_major_ticks(): tick.label.set_fontsize(6.5)
-
-        ax4 = plt.subplot(gs[1,1])
-        plot_annual_cycle(coord,*tsurf,draw_point_flag=False)
-        ax4.set_ylim([223,323])
-        ax4.set_title('tsurf annual cycle',fontsize=10)
-        ax4.get_legend().remove()
-        for tick in ax4.xaxis.get_major_ticks(): tick.label.set_fontsize(6.5)
-        ax4.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.0f'))
-
-        axP = plt.gcf().axes[1]
-        axP.set_position([0.265, 0.95, 0.5, 0.15])
 
 def _check_shapes(x1,x2):
     '''
