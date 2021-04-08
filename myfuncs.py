@@ -1278,10 +1278,9 @@ class GREB:
 
     @staticmethod 
     def t():
-        bin2netCDF(GREB.cloud_def_file())
-        time=xr.open_dataset(GREB.cloud_def_file()+'.nc').time
-        os.remove(GREB.cloud_def_file()+'.nc')
-        return time
+        return np.arange(np.datetime64('2000-01-01T00:00:00.000000000'),
+                         np.datetime64('2000-12-30T12:00:00.000000000')+np.timedelta64(12,'h'),
+                         np.timedelta64(12,'h'))
 
     @staticmethod
     def dx():
@@ -1558,9 +1557,9 @@ class GREB:
         forcing_filename = rmext(forcing_filename)
         forcing_filename_ = os.path.split(forcing_filename)[1]
         if txt1 in forcing_filename_:
-            sc_name = 'scenario.exp-930.geoeng.'+forcing_filename_+'_{}yrs'.format(years_of_simulation)
+            sc_name = 'scenario.exp-930.geoeng.2xCO2.'+forcing_filename_+'_{}yrs'.format(years_of_simulation)
         elif txt2 in forcing_filename_:
-            sc_name = 'scenario.exp-931.geoeng.'+forcing_filename_+'_{}yrs'.format(years_of_simulation)
+            sc_name = 'scenario.exp-931.geoeng.2xCO2.'+forcing_filename_+'_{}yrs'.format(years_of_simulation)
         elif (forcing_filename == GREB.cloud_def_file()) or (forcing_filename == GREB.solar_def_file()):
             sc_name = 'scenario.exp-20.2xCO2'+'_{}yrs'.format(years_of_simulation)
         else:
@@ -1600,7 +1599,7 @@ class GREB:
             raise Exception("exp_num '{}' not supported".format(exp_num))
         return ".".join((n1,n2))
 
-    def from_binary(filename,time_group=None,parse=True):
+    def from_binary(filename,time_group=None,parse=True,use_netCDF=False):
         """
         Read binary file into an xarray.Dataset object.
 
@@ -1630,11 +1629,16 @@ class GREB:
         if time_group not in ['12h','day','month','year','season',None]:
             raise Exception('time_group must be one of the following:\n'+\
                             '"12h","day","month","year","season"')
-        filename = rmext(filename)
-        bin2netCDF(filename)
-        data=xr.open_dataset(filename+'.nc')
+        if use_netCDF:
+            filename=rmext(filename)
+            bin2netCDF(filename)
+            data=xr.open_dataset(filename+".nc")
+        else:
+            from xgrads import open_CtlDataset
+            filename = rmext(filename)+".ctl"
+            data=open_CtlDataset(filename)
+        
         attrs=data.attrs
-        os.remove(filename+'.nc')
         if parse: data = parse_greb_var(data)
         if 'time' in data.coords and data.time.shape[0] > 1:
             t_res = np.timedelta64(data.time.values[1]-data.time.values[0],'D').item().total_seconds()/(3600*12)
@@ -1866,7 +1870,7 @@ class GREB:
             outpath=GREB.cloud_folder()+'/cld.artificial.ctl'
         GREB.create_bin_ctl(outpath,vars)
 
-    def create_solar(time = None, latitude = None, value = 1,
+    def create_solar(time = None, longitude = None, latitude = None, value = 1,
                     solar_base = None, outpath = None):
         '''
         Create an artificial solar matrix file from scratch or by modifying an
@@ -1882,6 +1886,10 @@ class GREB:
         latitude : array of float
         Extent of the 'lat' coordinate, in the form [lat_min, lat_max].
         Format: S-N degrees -> -90° to 90°.
+
+        longitude : array of float
+        Extent of the 'lon' coordinate, in the form [lon_min, lon_max].
+        Format: degrees -> 0° to 360°.
 
         value : float or callable
         Solar value to be assigned to the dimensions specified in time and
@@ -1949,6 +1957,33 @@ class GREB:
         else:
             mask=mask&(GREB.def_DataArray(np.full(GREB.dt(),True),dims='time'))
 
+        # LONGITUDE
+        if longitude is not None:
+            lon_exc = '"longitude" must be a number or in the form [lon_min,lon_max]'
+            if isinstance(longitude,Iterable):
+                if (isinstance(longitude,str)) or (len(longitude) > 2):
+                    raise Exception(lon_exc)
+                elif longitude[1]==longitude[0]:
+                    longitude = np.array(longitude[0])
+                    if (longitude<0) or (longitude>360):
+                        raise ValueError('"longitude" must be in the range [0÷360]')
+                    else:
+                        mask = mask&(data.coords['lon']==data.coords['lon'][np.argmin(abs(data.coords['lon']-longitude))])
+                elif longitude[1]>longitude[0]:
+                    mask = mask&((data.coords['lon']>=longitude[0])&(data.coords['lon']<=longitude[1]))
+                else:
+                    mask = mask&((data.coords['lon']>=longitude[0])|(data.coords['lon']<=longitude[1]))
+            elif (isinstance(longitude,float) or isinstance(longitude,int)):
+                longitude=np.array(longitude)
+                if np.any([longitude<0,longitude>360]):
+                    raise ValueError('"longitude" must be in the range [0÷360]')
+                else:
+                    mask = mask&(data.coords['lon']==data.coords['lon'][np.argmin(abs(data.coords['lon']-longitude))])
+            else:
+                raise Exception(lon_exc)
+        else:
+            mask=mask&(GREB.def_DataArray(np.full(GREB.dx(),True),dims='lon'))
+
         # LATITUDE
         if latitude is not None:
             lat_exc = '"latitude" must be a number or in the form [lat_min,lat_max]'
@@ -1987,10 +2022,7 @@ class GREB:
         # Correct value below 0
         data=data.where(data>=0,0)
         # Write .bin and .ctl files
-        if len(data.shape) == 2:
-            vars = {'solar':data.values[...,np.newaxis]}
-        else:
-            vars = {'solar':data.values}
+        vars = {'solar':data.values}
         if outpath is None:
             outpath=GREB.solar_folder()+'/sw.artificial.ctl'
         GREB.create_bin_ctl(outpath,vars)
