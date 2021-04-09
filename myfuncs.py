@@ -1418,12 +1418,12 @@ class GREB:
 
     @staticmethod
     def _shape_for_bin(type='cloud'):
-        if type == 'cloud' or type == 'r':
+        if type == 'cloud' or type == 'S':
             # 'Shape must be in the form (tdef,ydef,xdef)'
             return (GREB.dt(),GREB.dy(),GREB.dx())
         elif type == 'solar':
             return (GREB.dt(),GREB.dy(),1)
-        else: raise Exception('type must be either "cloud" or "solar"')
+        else: raise Exception('Type must be either "cloud", "solar" or "S')
 
     @staticmethod
     def to_shape_for_bin(data,type='cloud'):
