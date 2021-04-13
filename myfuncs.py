@@ -1430,10 +1430,13 @@ class GREB:
         else:
             def_sh=(GREB.dt(),GREB.dy(),1)
         sh=data.shape
-        if len(sh) != 3: 
-            raise Exception(f'data must be 3D, in the form {def_sh[0]}x{def_sh[1]}x{def_sh[2]} or {def_sh[0]}x{def_sh[1]}x1')
+        if len(sh) == 2:
+            data=np.expand_dims(data,axis=2)
+            sh=data.shape
+        elif len(sh) != 3: 
+            raise Exception(f'data must be 3D, in the form {GREB.dt()}x{GREB.dy()}x{GREB.dx()} or {GREB.dt()}x{GREB.dy()}x1')
         if ((sh[0] not in def_sh) or (sh[1] not in def_sh) or (sh[2] not in def_sh)):
-            raise Exception(f'data must be 3D, in the form {def_sh[0]}x{def_sh[1]}x{def_sh[2]} or {def_sh[0]}x{def_sh[1]}x1')
+            raise Exception(f'data must be 3D, in the form {GREB.dt()}x{GREB.dy()}x{GREB.dx()} or {GREB.dt()}x{GREB.dy()}x1')
         if sh != def_sh:
             indt=sh.index(def_sh[0])
             indy=sh.index(def_sh[1])
@@ -2037,7 +2040,7 @@ class GREB:
         vars = {'solar':data.values}
         if outpath is None:
             outpath=GREB.solar_folder()+'/sw.artificial.ctl'
-        GREB.create_bin_ctl(outpath,vars)
+        GREB.create_bin_ctl(outpath,vars,tridimensional=tridimensional)
 
 class Colormaps:
     def __init__(self):
