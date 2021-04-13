@@ -920,9 +920,10 @@ class DataArray(xr.DataArray):
                     cbticks = np.arange(-1,1+0.2,0.2)
         # SOLAR
         elif name == 'solar':
-            self=GREB.def_DataArray(data=np.broadcast_to(self,[GREB.dx()]+list(self.shape)).transpose(),
-                                         dims=('lat','lon'),
-                                         attrs=self.attrs)
+            if len(self.shape) == 1:
+                self=GREB.def_DataArray(data=np.broadcast_to(self,[GREB.dx()]+list(self.shape)).transpose(),
+                                            dims=('lat','lon'),
+                                            attrs=self.attrs)
             cmap = cm.YlOrRd
             if 'anomalies' in keys:
                 if 'annual_mean' in keys:
@@ -1318,8 +1319,11 @@ class GREB:
         return GREB.greb_folder()+'/input/isccp.cloud_cover.clim'
 
     @staticmethod
-    def solar_def_file():
-        return GREB.greb_folder()+'/input/solar_radiation.clim'
+    def solar_def_file(tridimensional=True):
+        if tridimensional:
+            return GREB.greb_folder()+'/input/solar_radiation.clim_3D'
+        else:
+            return GREB.greb_folder()+'/input/solar_radiation.clim'
 
     @staticmethod
     def cloud_folder():
@@ -1417,21 +1421,19 @@ class GREB:
         return i,j
 
     @staticmethod
-    def _shape_for_bin(type='cloud'):
-        if type == 'cloud' or type == 'S':
-            # 'Shape must be in the form (tdef,ydef,xdef)'
-            return (GREB.dt(),GREB.dy(),GREB.dx())
-        elif type == 'solar':
-            return (GREB.dt(),GREB.dy(),1)
-        else: raise Exception('Type must be either "cloud", "solar" or "S')
-
-    @staticmethod
-    def to_shape_for_bin(data,type='cloud'):
-        def_sh = GREB._shape_for_bin(type)
+    def to_shape_for_bin(data,type=None,tridimensional=True):
+        if not isinstance(tridimensional,bool):
+            raise Exception("tridimensional must be either True or False")
+        if type == 'cloud': tridimensional=True
+        if tridimensional:
+            def_sh=(GREB.dt(),GREB.dy(),GREB.dx())
+        else:
+            def_sh=(GREB.dt(),GREB.dy(),1)
         sh=data.shape
-        if (len(sh) != 3) or len(set(sh)) != 3: raise Exception('data must be 3D, in the form {}x{}x{}'.format(def_sh[0],def_sh[1],def_sh[2]))
+        if len(sh) != 3: 
+            raise Exception(f'data must be 3D, in the form {def_sh[0]}x{def_sh[1]}x{def_sh[2]} or {def_sh[0]}x{def_sh[1]}x1')
         if ((sh[0] not in def_sh) or (sh[1] not in def_sh) or (sh[2] not in def_sh)):
-            raise Exception('data shape must be in the form {}x{}x{}'.format(def_sh[0],def_sh[1],def_sh[2]))
+            raise Exception(f'data must be 3D, in the form {def_sh[0]}x{def_sh[1]}x{def_sh[2]} or {def_sh[0]}x{def_sh[1]}x1')
         if sh != def_sh:
             indt=sh.index(def_sh[0])
             indy=sh.index(def_sh[1])
@@ -1583,6 +1585,7 @@ class GREB:
         mask.data=np.where(mask<=0,False,True)
         return mask
     
+    @staticmethod
     def get_exp_name(exp_num):
         if isinstance(exp_num,str):
             exp_num = int(exp_num)
@@ -1599,6 +1602,7 @@ class GREB:
             raise Exception("exp_num '{}' not supported".format(exp_num))
         return ".".join((n1,n2))
 
+    @staticmethod
     def from_binary(filename,time_group=None,parse=True,use_netCDF=False):
         """
         Read binary file into an xarray.Dataset object.
@@ -1650,8 +1654,8 @@ class GREB:
         else:
             return Dataset(data,attrs=attrs)
 
-
-    def create_bin_ctl(path,vars):
+    @staticmethod
+    def create_bin_ctl(path,vars,tridimensional=True):
         '''
         Creates '.bin' and '.ctl' file from Dictionary.
 
@@ -1704,7 +1708,7 @@ class GREB:
         l=[v.shape for v in varvals]
         if not ( l.count(l[0]) == len(l) ):
             raise Exception('var1,var2,...,varN must be of the same size')
-        varvals = [GREB.to_shape_for_bin(v,type=n) for v,n in zip(varvals,varnames)]
+        varvals = [GREB.to_shape_for_bin(v,type=n,tridimensional=tridimensional) for v,n in zip(varvals,varnames)]
         varvals=[np.float32(v.copy(order='C')) for v in varvals]
         tdef,ydef,xdef = varvals[0].shape
         # WRITE CTL FILE
@@ -1712,6 +1716,7 @@ class GREB:
         # WRITE BIN FILE
         _create_bin(path,vars = varvals)
 
+    @staticmethod
     def create_clouds(time = None, longitude = None, latitude = None, value = 1,
                     cloud_base = None, outpath = None):
         '''
@@ -1759,7 +1764,7 @@ class GREB:
             if isinstance(cloud_base,str):
                 data=GREB.from_binary(cloud_base).cloud
             elif isinstance(cloud_base,np.ndarray):
-                data = GREB.def_DataArray(data=GREB.to_shape_for_bin(cloud_base),name='cloud')
+                data = GREB.def_DataArray(data=cloud_base,name='cloud')
             elif isinstance(cloud_base,xr.DataArray):
                 data = DataArray(cloud_base,attrs=cloud_base.attrs)
             else:
@@ -1870,8 +1875,9 @@ class GREB:
             outpath=GREB.cloud_folder()+'/cld.artificial.ctl'
         GREB.create_bin_ctl(outpath,vars)
 
+    @staticmethod
     def create_solar(time = None, longitude = None, latitude = None, value = 1,
-                    solar_base = None, outpath = None):
+                    solar_base = None, tridimensional = True, outpath = None):
         '''
         Create an artificial solar matrix file from scratch or by modifying an
         existent solar matrix.
@@ -1913,11 +1919,13 @@ class GREB:
         Creates artificial solar file ('.bin' and '.ctl' files).
 
         '''
+        if (not tridimensional) and (longitude is not None):
+            raise Exception("Requested change in longitude when data not set to tridimensional. Set 'tridimensional'=True if you want to change longitude")
         if solar_base is not None:
             if isinstance(solar_base,str):
                 data=GREB.from_binary(solar_base).solar
             elif isinstance(solar_base,np.ndarray):
-                data = GREB.def_DataArray(data=GREB.to_shape_for_bin(solar_base,type='solar'),name='solar')
+                data = GREB.def_DataArray(data=solar_base,name='solar')
             elif isinstance(solar_base,xr.DataArray):
                 data = DataArray(solar_base,attrs=solar_base.attrs)
             else:
@@ -1925,9 +1933,12 @@ class GREB:
                                 ' or a valid path to the solar file.')
         else:
             if callable(value):
-                data = GREB.from_binary(GREB.solar_def_file()).solar
-            else:            
-                data = GREB.def_DataArray(name='solar',dims=('time','lat'))
+                data = GREB.from_binary(GREB.solar_def_file(tridimensional=tridimensional)).solar
+            else:
+                if tridimensional:         
+                    data = GREB.def_DataArray(name='solar',dims=('time','lat','lon'))
+                else:
+                    data = GREB.def_DataArray(name='solar',dims=('time','lat'))
 
         mask=True
         # Check coordinates and constrain them
@@ -1957,33 +1968,6 @@ class GREB:
         else:
             mask=mask&(GREB.def_DataArray(np.full(GREB.dt(),True),dims='time'))
 
-        # LONGITUDE
-        if longitude is not None:
-            lon_exc = '"longitude" must be a number or in the form [lon_min,lon_max]'
-            if isinstance(longitude,Iterable):
-                if (isinstance(longitude,str)) or (len(longitude) > 2):
-                    raise Exception(lon_exc)
-                elif longitude[1]==longitude[0]:
-                    longitude = np.array(longitude[0])
-                    if (longitude<0) or (longitude>360):
-                        raise ValueError('"longitude" must be in the range [0÷360]')
-                    else:
-                        mask = mask&(data.coords['lon']==data.coords['lon'][np.argmin(abs(data.coords['lon']-longitude))])
-                elif longitude[1]>longitude[0]:
-                    mask = mask&((data.coords['lon']>=longitude[0])&(data.coords['lon']<=longitude[1]))
-                else:
-                    mask = mask&((data.coords['lon']>=longitude[0])|(data.coords['lon']<=longitude[1]))
-            elif (isinstance(longitude,float) or isinstance(longitude,int)):
-                longitude=np.array(longitude)
-                if np.any([longitude<0,longitude>360]):
-                    raise ValueError('"longitude" must be in the range [0÷360]')
-                else:
-                    mask = mask&(data.coords['lon']==data.coords['lon'][np.argmin(abs(data.coords['lon']-longitude))])
-            else:
-                raise Exception(lon_exc)
-        else:
-            mask=mask&(GREB.def_DataArray(np.full(GREB.dx(),True),dims='lon'))
-
         # LATITUDE
         if latitude is not None:
             lat_exc = '"latitude" must be a number or in the form [lat_min,lat_max]'
@@ -2009,6 +1993,34 @@ class GREB:
                 raise Exception(lat_exc)
         else:
             mask=mask&(GREB.def_DataArray(np.full(GREB.dy(),True),dims='lat'))
+
+        if tridimensional:
+            # LONGITUDE
+            if longitude is not None:
+                lon_exc = '"longitude" must be a number or in the form [lon_min,lon_max]'
+                if isinstance(longitude,Iterable):
+                    if (isinstance(longitude,str)) or (len(longitude) > 2):
+                        raise Exception(lon_exc)
+                    elif longitude[1]==longitude[0]:
+                        longitude = np.array(longitude[0])
+                        if (longitude<0) or (longitude>360):
+                            raise ValueError('"longitude" must be in the range [0÷360]')
+                        else:
+                            mask = mask&(data.coords['lon']==data.coords['lon'][np.argmin(abs(data.coords['lon']-longitude))])
+                    elif longitude[1]>longitude[0]:
+                        mask = mask&((data.coords['lon']>=longitude[0])&(data.coords['lon']<=longitude[1]))
+                    else:
+                        mask = mask&((data.coords['lon']>=longitude[0])|(data.coords['lon']<=longitude[1]))
+                elif (isinstance(longitude,float) or isinstance(longitude,int)):
+                    longitude=np.array(longitude)
+                    if np.any([longitude<0,longitude>360]):
+                        raise ValueError('"longitude" must be in the range [0÷360]')
+                    else:
+                        mask = mask&(data.coords['lon']==data.coords['lon'][np.argmin(abs(data.coords['lon']-longitude))])
+                else:
+                    raise Exception(lon_exc)
+            else:
+                mask=mask&(GREB.def_DataArray(np.full(GREB.dx(),True),dims='lon'))
 
         # Change values
         if (isinstance(value,float) or isinstance(value,int) or isinstance(value,np.ndarray)):
@@ -2675,7 +2687,9 @@ def anomalies(x,x_base=None,copy=True,update_attrs=True):
             ctrfile=GREB.cloud_def_file()
         elif (check_xarray(x,'DataArray') and x.name == 'solar') or \
             (check_xarray(x,'Dataset') and 'solar' in list(x.data_vars.keys())):
-            ctrfile=GREB.solar_def_file()
+            try: len(x.lon)
+            except TypeError: ctrfile=GREB.solar_def_file(tridimensional=False)
+            else: ctrfile=GREB.solar_def_file(tridimensional=True)
         else:
             ctrfile=GREB.control_def_file()
         if 'grouped_by' in x.attrs:
