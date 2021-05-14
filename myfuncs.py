@@ -331,11 +331,11 @@ class Dataset(xr.Dataset):
         return group_by(self,time_group,copy=copy,update_attrs=update_attrs)
 
     def srex_mean(self,copy=True):
-        mask=GREB.SREX_regions.mask()
+        mask=SREX_regions.mask()
         if copy: self=self.copy()
-        new=self.groupby(mask).apply(global_mean)
-        new.coords['srex_abbrev'] = ('srex_region', SREX_regions.abbrevs)
-        new.coords['srex_name'] = ('srex_region', SREX_regions.names)
+        new=self.groupby(mask).mean('stacked_lat_lon')
+        new.coords['srex_abbrev'] = ('srex_region', srex_regions.abbrevs)
+        new.coords['srex_name'] = ('srex_region', srex_regions.names)
         return new
 
     def seasonal_time_series(self,first_month_num=None,update_attrs=True):
@@ -1126,11 +1126,11 @@ class DataArray(xr.DataArray):
         return group_by(self,time_group,copy=copy,update_attrs=update_attrs)
 
     def srex_mean(self,copy=True):
-        mask=self.SREX_regions.mask()
+        mask=SREX_regions.mask()
         if copy: self=self.copy()
-        new=self.groupby(mask).apply(global_mean)
-        new.coords['srex_abbrev'] = ('srex_region', SREX_regions.abbrevs)
-        new.coords['srex_name'] = ('srex_region', SREX_regions.names)
+        new=self.groupby(mask).mean('stacked_lat_lon')
+        new.coords['srex_abbrev'] = ('srex_region', srex_regions.abbrevs)
+        new.coords['srex_name'] = ('srex_region', srex_regions.names)
         return new
 
     def seasonal_time_series(self,first_month_num=None,update_attrs=True):
@@ -2066,41 +2066,57 @@ class Colormaps:
         return colors.LinearSegmentedColormap.from_list(name, cols)   
 
     def add_white_end(colormap,name=None):
-        if name is None:
-            name = 'new_'+colormap.name
+        if name is None: name = 'new_'+colormap.name
         col=colormap(np.linspace(0,1,200))
         w=np.array(list(map(lambda x: np.linspace(x,1,30),col[-1]))).transpose()
         cols=np.vstack([col,w])
         return colors.LinearSegmentedColormap.from_list(name, cols) 
 
+    def portion(colormap,range,name=None):
+        if not isinstance(range,list) or isinstance(range,tuple):
+            raise Exception("Range needs to be a list or tuple in the form [min, max].")
+        if len(range) != 2:
+            raise Exception("Range needs to be a list or tuple in the form [min, max].")
+        if (range[0] < 0) or (range[1] > 1) or (range[0] >= range[1]): 
+            raise Exception("Range must be an interval between [0 1].")
+        if name is None: name = 'new_'+colormap.name
+        n=int(np.round(colormap.N*(range[1]-range[0])))
+        portion = colormap(np.linspace(*range, n))
+        return colors.LinearSegmentedColormap.from_list(name, portion)
+
     div_tsurf = add_white_inbetween(cm.Spectral_r,name='div_tsurf')
     div_tsurf_r = div_tsurf.reversed()
     div_precip = add_white_inbetween(cm.twilight_shifted_r,name='div_precip')
     div_precip_r = div_precip.reversed()
-    seq_tsurf_hot = add_white_start(cm.YlOrRd, name="seq_tsurf_hot")
+    seq_tsurf_hot = portion(div_tsurf,[0.5,1], name="seq_tsurf_hot")
     seq_tsurf_hot_r = seq_tsurf_hot.reversed()
-    seq_tsurf_cold = add_white_end(cm.YlGnBu, name="seq_tsurf_cold")
+    seq_tsurf_cold = portion(div_tsurf,[0,0.5], name="seq_tsurf_cold")
     seq_tsurf_cold_r = seq_tsurf_cold.reversed()
-    seq_precip_wet = add_white_start(cm.GnBu, name="seq_precip_wet")
+    seq_precip_wet = portion(div_precip,[0.5,1], name="seq_precip_wet")
     seq_precip_wet_r = seq_precip_wet.reversed()
-    seq_precip_dry = add_white_end(cm.copper, name="seq_precip_dry")
+    seq_precip_dry = portion(div_precip,[0,0.5], name="seq_precip_dry")
     seq_precip_dry_r = seq_precip_dry.reversed()
 
 class SREX_regions:
     def __init__(self):
         pass
+    
+    abbrevs = srex_regions.abbrevs
+    names = srex_regions.names
 
     @staticmethod
     def mask(name=None):
         if name is None: name='srex_region'
-        return DataArray(srex_regions.mask(GREB.def_DataArray(),wrap_lon=True),name=name)
+        return DataArray(srex_regions.mask(GREB.def_DataArray(dims=['lat','lon']),wrap_lon=True),name=name)
 
     @staticmethod
     def plot(text_kws = dict(), **kwargs):
         if 'label' not in kwargs: kwargs['label']='abbrev'
+        if 'add_ocean' not in kwargs: kwargs["add_ocean"]=True
+        if "fontsize" in kwargs: text_kws["fontsize"] = kwargs.pop('fontsize')
         if "fontsize" not in text_kws:
             text_kws["fontsize"] = 8
-        srex_regions.plot(**text_kws,**kwargs)
+        srex_regions.plot(text_kws=text_kws,**kwargs)
 
 def group_by(x,time_group,copy=True,update_attrs=True):
     """
