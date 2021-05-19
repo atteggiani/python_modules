@@ -520,194 +520,41 @@ class DataArray(xr.DataArray):
         if (self.name == 'tocean'):
             plt.gca().add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m'),
                                   **land_kwargs)
-        if isinstance(statistics,list):
-            fs=statistics[1]
-            statistics=statistics[0]
-        else:
-            fs=12
-        if statistics == 'all':
-            gm=self.global_mean().values
-            rms=self.rms().values
-            txt = ('gmean = {:.3g}  |  rmse = {:.3g}').format(gm,rms)
-            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')
-        elif statistics == 'gmean':
-            gm=self.global_mean().values
-            txt = ('gmean = {:.3g}').format(gm)
-            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')
-        elif statistics == 'rms':
-            rms=self.rms().values
-            txt = ('rmse = {:.3g}').format(rms)
-            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')         
-        if isinstance(t_student,bool):
-            if t_student:
-                raise Exception('t_student must be False, or equal to either a dictionary or an '
-                        'xarray.DataArray containing t-student distribution probabilities.')
-        else:
-            if check_xarray(t_student,"DataArray"):
-                _check_shapes(t_student,self)
-                t_student = {"p":t_student}
-            elif isinstance(t_student,np.ndarray):
-                t_student = {"p":xr.DataArray(data=t_student,dims = ["latitude","longitude"], coords=[UM.latitude,UM.longitude])}
-            if isinstance(t_student,dict):
-                if "p" not in t_student:
-                    raise Exception('t_student must be contain "p" key, containing '
-                        'an xarray.DataArray with t-student distribution '
-                        'probabilities.\nTo obtain t_student distribution '
-                        'probabilities, you can use the "t_student_probability" function.')
-                elif isinstance(t_student["p"],np.ndarray):
-                    t_student["p"] = xr.DataArray(data=t_student["p"],dims = ["latitude","longitude"], coords=[UM.latitude,UM.longitude])
-                if "treshold" in t_student:
-                    if t_student["treshold"] > 1:
-                        raise Exception("Treshold must be <= 1")
-                else:
-                    t_student["treshold"]=0.05
-                if "hatches" not in t_student:
-                    t_student["hatches"]= '///'
-            else:
-                raise Exception('t_student must be either a dictionary or an '
-                        'xarray.DataArray containing t-student distribution probabilities.')
-            p=t_student["p"]
-            a=t_student["treshold"]
-            DataArray(p.where(p<a,0).where(p>=a,1))._to_contiguous_lon().plot.contourf(
-                                                ax=plt.gca(),
-                                                transform=ccrs.PlateCarree(),
-                                                levels=np.linspace(0,1,3),
-                                                hatches=['',t_student['hatches']],
-                                                alpha=0,
-                                                add_colorbar=False,
-                                                )
-        plt.title(title)
-        if outpath is not None:
-            plt.savefig(outpath, format = 'png',**save_kwargs)
-            # plt.close()
-        return im
 
-    def plotvar_2(self, projection = None,
-                outpath = None,
-                name = None,
-                title = None,
-                statistics='all',
-                t_student=False,
-                nlev=None,
-                du= None,
-                coast_kwargs = None,
-                land_kwargs = None,
-                save_kwargs = None,
-                **contourf_kwargs):
+        fmt = ".2f"
+        fs = 12
+        
+        if isinstance(statistics,dict):
+            if "fs" in statistics:
+                fs = statistics["fs"]
+            elif "fontsize" in statistics:
+                statistics["fontsize"]
+            if "format" in statistics:
+                fmt = statistics["format"]
+            if "value" not in statistics: 
+                raise Exception("Missing 'value' key in statistics. 'value' must be either 'all', 'gmean' or 'rms'.")
+            else: statistics = statistics['value']
 
-        '''
-        Plots GREB variables with associated color maps, scales and projections.
-
-        '''
-
-        def _get_var(x):
-            keys = x.attrs.keys()
-            name = x.name if x.name is not None else 'data'
-            if 'long_name' in keys:
-                title = x.attrs['long_name'] if x.attrs['long_name'] is not None else ''
-            else:
-                title = x.name if x.name is not None else ''
-            if 'units' in keys:
-                units = x.attrs['units'] if x.attrs['units'] is not None else ''
-            else:
-                units = ''
-            if 'annual_mean' in keys:
-                title = title + ' Annual Mean'
-                name=name+'.amean'
-            if 'seasonal_cycle' in keys:
-                title = title + ' Seasonal Cycle'
-                name=name+'.seascyc'
-                cmap = cm.RdBu_r
-            if 'anomalies' in keys:
-                title = title + ' Anomalies'
-                name=name+'.anom'
-            return title,name,units
-
-        param=self._get_param(nlev=nlev)
-        self=param['self']
-        if title is None: title = _get_var(self)[0]
-        if name is None: name = _get_var(self)[1]
-        if nlev is None: nlev=100
-        units = _get_var(self)[2]
-
-        new_contourf_kwargs = contourf_kwargs
-        if projection is None: projection = ccrs.Robinson()
-        elif not projection: projection = ccrs.PlateCarree()
-        if 'ax' not in contourf_kwargs:
-            new_contourf_kwargs['ax'] = plt.axes(projection=projection)
-        if 'cmap' not in contourf_kwargs:
-            new_contourf_kwargs['cmap'] = param['cmap']
-        if ('levels' not in contourf_kwargs) and ('norm' not in contourf_kwargs):
-            if param['levels'] is None:
-                new_contourf_kwargs['levels'] = nlev
-            else:
-                new_contourf_kwargs['levels'] = param['levels']
-        if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
-        if contourf_kwargs['add_colorbar']==True:
-            cbar_kwargs = {'orientation':'horizontal', 'label':units}
-            if 'cbar_kwargs' in contourf_kwargs:                
-                cbar_kwargs.update(contourf_kwargs['cbar_kwargs'])
-            else:
-                if du is not None and "ticks" not in contourf_kwargs['cbar_kwargs']:
-                    if ('levels' in contourf_kwargs):
-                        lev_kwargs=contourf_kwargs
-                    else:
-                        lev_kwargs=new_contourf_kwargs
-                    umin=lev_kwargs['levels'][0]
-                    umax=lev_kwargs['levels'][-1]
-                    contourf_kwargs['cbar_kwargs']["ticks"] = np.arange(umin,umax+du,du)    
-            if ('ticks' not in cbar_kwargs):
-                cbar_kwargs['ticks'] = param['cbticks']
-            new_contourf_kwargs['cbar_kwargs']=cbar_kwargs
-
-        if land_kwargs is not None:
-            land_kwargs = {'edgecolor':'face', 'facecolor':'black', **land_kwargs}
-        else:
-            land_kwargs = {'edgecolor':'face', 'facecolor':'black'}
-
-        if coast_kwargs is not None:
-            coast_kwargs = {**coast_kwargs}
-        else:
-            coast_kwargs = {}
-        if self.name == 'cloud':
-            coast_kwargs = {'edgecolor':[0,.5,0.3],**coast_kwargs}
-
-        if save_kwargs is not None:
-            save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
-        else:
-            save_kwargs = {'dpi':300, 'bbox_inches':'tight'}
-
-        im=self._to_contiguous_lon().plot.contourf(transform=ccrs.PlateCarree(),
-                                                    **new_contourf_kwargs)
-
-        plt.gca().add_feature(cfeature.COASTLINE,**coast_kwargs)
-        if (self.name == 'tocean'):
-            plt.gca().add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m'),
-                                  **land_kwargs)
-        if isinstance(statistics,list):
-            fs=statistics[1]
-            statistics=statistics[0]
-        else:
-            fs=12
-        if statistics == 'all':
-            gm=self.global_mean().values
-            rms=self.rms().values
-            txt = ('gmean = {:.3g}  |  rmse = {:.3g}').format(gm,rms)
-            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')
-        elif statistics == 'gmean':
-            gm=self.global_mean().values
-            txt = ('gmean = {:.3g}').format(gm)
-            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')
-        elif statistics == 'rms':
-            rms=self.rms().values
-            txt = ('rmse = {:.3g}').format(rms)
-            plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                    transform=plt.gca().transAxes,fontsize=fs, weight='bold')         
+        if isinstance(statistics,str):
+            if statistics == 'all':
+                gm=self.global_mean().values
+                rms=self.rms().values
+                txt = (f'gmean = {gm:{fmt}}  |  rmse = {rms:{fmt}}').format(gm,rms)
+                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                        transform=plt.gca().transAxes,fontsize=fs, weight='bold')
+            elif statistics == 'gmean':
+                gm=self.global_mean().values
+                txt = (f'gmean = {gm:{fmt}}')
+                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                        transform=plt.gca().transAxes,fontsize=fs, weight='bold')
+            elif statistics == 'rms':
+                rms=self.rms().values
+                txt = (f'rmse = {rms:{fmt}}')
+                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                        transform=plt.gca().transAxes,fontsize=fs, weight='bold')
+            else: raise Exception("Invalid string for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
+        else: raise Exception("Invalid type for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
+      
         if isinstance(t_student,bool):
             if t_student:
                 raise Exception('t_student must be False, or equal to either a dictionary or an '
