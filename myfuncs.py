@@ -987,6 +987,10 @@ class DataArray(xr.DataArray):
     def t_student_probability(self,y,season=None):
         return t_student_probability(self,y,season=season)
 
+    def to_mm_per_day(self,copy=True):  
+        if copy: self = self.copy()
+        return UM.to_mm_per_day(self)
+
 class UM:
     longitude = np.array([  0.  ,   3.75,   7.5 ,  11.25,  15.  ,  18.75,  22.5 ,  26.25,
         30.  ,  33.75,  37.5 ,  41.25,  45.  ,  48.75,  52.5 ,  56.25,
@@ -1023,6 +1027,7 @@ class UM:
                                 18820.8203125, 20246.599609375, 21808.13671875, 23542.18359375, 
                                 25520.9609375, 27901.357421875, 31063.888671875, 36081.76171875])
     
+    @staticmethod
     def months(n_char=2):
         if n_char == 2:
             return ["ja","fb","mr","ar","my","jn","jl","ag","sp","ot","nv","dc"]
@@ -1035,12 +1040,14 @@ class UM:
     def streams():
         return ['a','b','c','d','e','f','g','h','i','j']
 
+    @staticmethod
     def ppm2kgkg(x):
         m_air=0.0289644 #kg/mol
         m_CO2=0.0440095 #kg/mol
         coeff=1E-6*(m_CO2/m_air)
         return x*coeff
 
+    @staticmethod
     def kgkg2ppm(x):
         m_air=0.0289644 #kg/mol
         m_CO2=0.0440095 #kg/mol
@@ -1052,12 +1059,14 @@ class UM:
         return {10:"a",11:"b",12:"c",13:"d",14:"e",15:"f",16:"g",17:"h",18:"i",19:"j",20:"k",21:"l",22:"m",
                 23:"n",24:"o",25:"p",26:"q",27:"r",28:"s",29:"t",30:"u",31:"v",32:"w",33:"x",34:"y",35:"z"}
 
+    @staticmethod
     def to_um_filename_years(years):
         if isinstance(years,list):
             return ['{}{:02d}'.format(UM.um_years_ref()[int(y/100)],int(round((y/100 % 1)*100))) for y in years]
         else:
             return '{}{:02d}'.format(UM.um_years_ref()[int(years/100)],int(round((years/100 % 1)*100)))
-            
+
+    @staticmethod            
     def from_um_filename_years(um_years):
         def get_key_by_value(val):
             for v in UM.um_years_ref().items():
@@ -1072,6 +1081,7 @@ class UM:
     def land_mask_file():
         return "/g/data3/w48/dm5220/ancil/land_mask/land_mask.nc"
 
+    @staticmethod
     def add_evaporation(x):
         '''
         Function to add the variable "evaporation" to the Dataset.
@@ -1095,12 +1105,14 @@ class UM:
         return x.assign(evaporation=x[variables[0]].where(x[variables[0]] <= 100,0) + 
                         x[variables[1]].where(x[variables[1]] <= 100,0))
 
+    @staticmethod
     def rename_m01s09i231(x):
         '''
         Function to rename the variable m01s09i231 of UM model to combined_cloud_amount.
         '''
         return x.rename_vars({"m01s09i231":"combined_cloud_amount"})
 
+    @staticmethod
     def split_w_wind(x):
         '''
         Function to split w component of winds into w_up and w_down
@@ -1111,6 +1123,26 @@ class UM:
         d_overtuning=d_down-d_up
         return x.assign({"omega_up":d_up,"omega_down":d_down,"omega_overtuning":d_overtuning})
 
+    @staticmethod
+    def to_mm_per_day(x):
+        '''
+        Function to convert data with units from "kg m-2 s-1" to "mm day-1"
+        '''
+        alpha = 86400
+        if 'units' not in x.attrs:
+            x.attrs['units']="TEMP_UNITS"
+        if (x.attrs['units'] in ["kg m-2 s-1","kg/m^2/s"]):
+            x.attrs['units']="mm/day"
+            return x*alpha
+        elif (x.name in ["precipitation_flux","evaporation_flux_from_open_sea",
+                        "evaporation_from_soil_surface","evaporation"]):
+            if x.attrs['units'] not in ["mm/day","mm day-1","mm d-1"]:
+                x.attrs['units']="mm/day"
+                return x*alpha
+            else: return x
+        else:
+            raise Exception("Data units not understood")
+            
 class GREB:
     
     def __init__(self):
