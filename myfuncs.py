@@ -472,11 +472,8 @@ class DataArray(xr.DataArray):
         if title is None: title = _get_var(self)[0]
         if name is None: name = _get_var(self)[1]
         if nlev is None: nlev=100
-        if 'units' not in contourf_kwargs:
+        if 'units' is None:
             units = _get_var(self)[2]
-        else:
-            units = contourf_kwargs['units']
-
         if projection is None: projection = ccrs.Robinson()
         elif not projection: projection = ccrs.PlateCarree()
         if 'ax' not in contourf_kwargs:
