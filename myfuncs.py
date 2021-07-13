@@ -433,6 +433,7 @@ class DataArray(xr.DataArray):
                 t_student=False,
                 nlev=None,
                 du= None,
+                units=None,
                 coast_kwargs = None,
                 land_kwargs = None,
                 save_kwargs = None,
@@ -471,7 +472,10 @@ class DataArray(xr.DataArray):
         if title is None: title = _get_var(self)[0]
         if name is None: name = _get_var(self)[1]
         if nlev is None: nlev=100
-        units = _get_var(self)[2]
+        if 'units' not in contourf_kwargs:
+            units = _get_var(self)[2]
+        else:
+            units = contourf_kwargs['units']
 
         if projection is None: projection = ccrs.Robinson()
         elif not projection: projection = ccrs.PlateCarree()
@@ -827,7 +831,7 @@ class DataArray(xr.DataArray):
             if du is not None:
                 umin=contourf_kwargs['levels'][0]
                 umax=contourf_kwargs['levels'][-1]
-                contourf_kwargs['cbar_kwargs'].update({"ticks":np.arange(umin,umax+du,du)})
+                contourf_kwargs['cbar_kwargs']['ticks']=np.arange(umin,umax+du,du)
 
         yscale = "log" if vertical_levs == "pressure" else "linear"   
         yincrease = False if vertical_levs == "um_levs" else True
