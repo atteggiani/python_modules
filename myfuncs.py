@@ -528,7 +528,7 @@ class DataArray(xr.DataArray):
             if "fs" in statistics:
                 fs = statistics["fs"]
             elif "fontsize" in statistics:
-                statistics["fontsize"]
+                fs = statistics["fontsize"]
             if "format" in statistics:
                 fmt = statistics["format"]
             if "value" not in statistics: 
@@ -539,7 +539,7 @@ class DataArray(xr.DataArray):
             if statistics == 'all':
                 gm=self.global_mean().values
                 rms=self.rms().values
-                txt = (f'gmean = {gm:{fmt}}  |  rmse = {rms:{fmt}}').format(gm,rms)
+                txt = (f'gmean = {gm:{fmt}}  |  rms = {rms:{fmt}}').format(gm,rms)
                 plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
                         transform=plt.gca().transAxes,fontsize=fs, weight='bold')
             elif statistics == 'gmean':
@@ -549,7 +549,7 @@ class DataArray(xr.DataArray):
                         transform=plt.gca().transAxes,fontsize=fs, weight='bold')
             elif statistics == 'rms':
                 rms=self.rms().values
-                txt = (f'rmse = {rms:{fmt}}')
+                txt = (f'rms = {rms:{fmt}}')
                 plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
                         transform=plt.gca().transAxes,fontsize=fs, weight='bold')
             else: raise Exception("Invalid string for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
