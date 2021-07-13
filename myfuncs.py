@@ -794,6 +794,7 @@ class DataArray(xr.DataArray):
     def plotlev(self,
                 title = None,
                 units = None,
+                du= None,
                 t_student=False,
                 outpath = None,
                 save_kwargs = None,
@@ -823,6 +824,11 @@ class DataArray(xr.DataArray):
             if 'cbar_kwargs' not in contourf_kwargs: contourf_kwargs['cbar_kwargs'] = dict()
             if units is not None:
                 contourf_kwargs['cbar_kwargs']['label']=units
+            if du is not None:
+                umin=contourf_kwargs['levels'][0]
+                umax=contourf_kwargs['levels'][-1]
+                contourf_kwargs['cbar_kwargs'].update({"ticks":np.arange(umin,umax+du,du)})
+
         yscale = "log" if vertical_levs == "pressure" else "linear"   
         yincrease = False if vertical_levs == "um_levs" else True
             
