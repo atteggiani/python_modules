@@ -24,6 +24,10 @@ class Dataset(xr.Dataset):
     Wrapper for xarray.Dataset class in order to add user-defined functions
 
     '''
+    __slots__ = ("dataset",)
+    
+    # def __init__(self, ds):
+    #     self.__class__.dataset.__set__(self, ds)
 
     def __add__(self,other):
         self=self.copy()
@@ -347,6 +351,10 @@ class DataArray(xr.DataArray):
     Wrapper for xarray.DataArray class in order to add user-defined functions
 
     '''
+    __slots__ = ("dataarray",)
+
+    # def __init__(self, ds):
+    #     self.__class__.dataarray.__set__(self, ds)
 
     def __add__(self,other):
         attrs=self.attrs
@@ -472,7 +480,7 @@ class DataArray(xr.DataArray):
         if title is None: title = _get_var(self)[0]
         if name is None: name = _get_var(self)[1]
         if nlev is None: nlev=100
-        if 'units' is None:
+        if units is None:
             units = _get_var(self)[2]
         if projection is None: projection = ccrs.Robinson()
         elif not projection: projection = ccrs.PlateCarree()
