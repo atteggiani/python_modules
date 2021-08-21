@@ -486,6 +486,7 @@ class DataArray(xr.DataArray):
         elif not projection: projection = ccrs.PlateCarree()
         if 'ax' not in contourf_kwargs:
             contourf_kwargs['ax'] = plt.axes(projection=projection)
+        ax=contourf_kwargs['ax']
         if 'cmap' not in contourf_kwargs:
             contourf_kwargs['cmap'] = param['cmap']
         if ('levels' not in contourf_kwargs) and ('norm' not in contourf_kwargs):    
@@ -525,9 +526,9 @@ class DataArray(xr.DataArray):
         im=self._to_contiguous_lon().plot.contourf(transform=ccrs.PlateCarree(),
                                                     **contourf_kwargs)
 
-        plt.gca().add_feature(cfeature.COASTLINE,**coast_kwargs)
+        ax.add_feature(cfeature.COASTLINE,**coast_kwargs)
         if (self.name == 'tocean'):
-            plt.gca().add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m'),
+            ax.add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m'),
                                   **land_kwargs)
 
         fmt = ".2f"
@@ -549,18 +550,18 @@ class DataArray(xr.DataArray):
                 gm=self.global_mean().values
                 rms=self.rms().values
                 txt = (f'gmean = {gm:{fmt}}  |  rms = {rms:{fmt}}').format(gm,rms)
-                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                        transform=plt.gca().transAxes,fontsize=fs, weight='bold')
+                ax.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                        transform=ax.transAxes,fontsize=fs, weight='bold')
             elif statistics == 'gmean':
                 gm=self.global_mean().values
                 txt = (f'gmean = {gm:{fmt}}')
-                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                        transform=plt.gca().transAxes,fontsize=fs, weight='bold')
+                ax.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                        transform=ax.transAxes,fontsize=fs, weight='bold')
             elif statistics == 'rms':
                 rms=self.rms().values
                 txt = (f'rms = {rms:{fmt}}')
-                plt.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
-                        transform=plt.gca().transAxes,fontsize=fs, weight='bold')
+                ax.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                        transform=ax.transAxes,fontsize=fs, weight='bold')
             else: raise Exception("Invalid string for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
         else: raise Exception("Invalid type for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
       
@@ -595,17 +596,16 @@ class DataArray(xr.DataArray):
             p=t_student["p"]
             a=t_student["treshold"]
             DataArray(p.where(p<a,0).where(p>=a,1))._to_contiguous_lon().plot.contourf(
-                                                ax=plt.gca(),
+                                                ax=ax,
                                                 transform=ccrs.PlateCarree(),
                                                 levels=np.linspace(0,1,3),
                                                 hatches=['',t_student['hatches']],
                                                 alpha=0,
                                                 add_colorbar=False,
                                                 )
-        plt.title(title)
+        ax.set_title(title)
         if outpath is not None:
             plt.savefig(outpath, format = 'png',**save_kwargs)
-            # plt.close()
         return im
 
     def _get_param(self,nlev=None):
@@ -826,6 +826,7 @@ class DataArray(xr.DataArray):
             vertical_levs = "um_levs"
         else:
             vertical_levs = None
+            warnings.warn("The nature of the vertical level is not known")
 
         ax = plt.axes() if 'ax' not in contourf_kwargs else contourf_kwargs.pop('ax')
         if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
@@ -838,12 +839,12 @@ class DataArray(xr.DataArray):
                 umax=contourf_kwargs['levels'][-1]
                 contourf_kwargs['cbar_kwargs']['ticks']=np.arange(umin,umax+du,du)
 
-        yscale = "log" if vertical_levs == "pressure" else "linear"   
-        yincrease = False if vertical_levs == "um_levs" else True
+        if "yscale" not in contourf_kwargs:
+            contourf_kwargs['yscale'] = "log" if vertical_levs == "pressure" else "linear"
+        if "yincrease" not in contourf_kwargs:
+            contourf_kwargs['yincrease'] = False if vertical_levs == "um_levs" else True
             
         im=self.plot.contourf(ax=ax,
-                    yincrease=yincrease,
-                    yscale=yscale,
                     **contourf_kwargs,
                     )
         if isinstance(t_student,bool):
@@ -887,28 +888,27 @@ class DataArray(xr.DataArray):
                                         alpha=0,
                                         add_colorbar=False,
                                         )
-        plt.xlabel("")
+        ax.set_xlabel("")
         if core_dim == "lat":
-            plt.xticks(ticks=np.arange(-90,90+30,30),
-                       labels=["90S","60S","30S","0","30N","60N","90N"])
-            plt.gca().xaxis.set_minor_locator(MultipleLocator(10))
+            ax.set_xticks(np.arange(-90,90+30,30))
+            ax.set_xticklabels(["90S","60S","30S","0","30N","60N","90N"])
+            ax.xaxis.set_minor_locator(MultipleLocator(10))
         elif core_dim == "lon":
-            plt.xticks(ticks=np.arange(-180,180+60,60),
-                       labels=["180W","120W","60W","0","60E","120E","180E"])
-            plt.gca().xaxis.set_minor_locator(MultipleLocator(10))
+            ax.set_xticks(np.arange(-180,180+60,60))
+            ax.set_xticklabels(["180W","120W","60W","0","60E","120E","180E"])
+            ax.xaxis.set_minor_locator(MultipleLocator(10))
         if vertical_levs=="pressure": 
-            plt.yticks(ticks=[1000,800,600,400,200,50],labels=["1000","800","600","400","200","50"])
-            plt.ylim([1000,50])
-            # plt.ylabel("Pressure")
+            ax.set_yticks([1000,800,600,400,200,50])
+            ax.set_yticklabels(["1000","800","600","400","200","50"])
+            ax.set_ylim([1000,50])
         elif vertical_levs=="um_levs": 
-            plt.ylim([1,38])    
-            plt.yticks(ticks=np.arange(1,38,5))
-            plt.ylabel("Model level number")
-        plt.tick_params(axis='y',which='minor',left=False,right=False)
-        plt.tick_params(axis='y',which='major',left=True,right=True)
-        plt.tick_params(axis='x',which='both',bottom=True,top=True)
+            ax.set_ylim([1,32])    
+            ax.set_yticks(np.arange(1,32,6))
+        ax.tick_params(axis='y',which='minor',left=False,right=False)
+        ax.tick_params(axis='y',which='major',left=True,right=True)
+        ax.tick_params(axis='x',which='both',bottom=True,top=True)
         if title is None: title=self.name
-        plt.title(title)
+        ax.set_title(title)
         if save_kwargs is not None:
             save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
         else:
