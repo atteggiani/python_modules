@@ -815,7 +815,7 @@ class DataArray(xr.DataArray):
             core_dim="lon"
             lon = self.get_spatial_coords()[1]
             l=len(self[lon])
-            self = self.roll({lon:int(l/2)})
+            self = self.roll({lon:int(l/2)},roll_coords=True)
             oldlon=self[lon]
             newlon=oldlon.where(oldlon < 180, oldlon-360)
             self=self.assign_coords({lon:newlon})._to_contiguous_lon()
@@ -879,7 +879,7 @@ class DataArray(xr.DataArray):
             a=t_student["treshold"]
             P=p.where(p<a,0).where(p>=a,1)
             if core_dim == "lon": 
-                P = P.roll({lon:int(l/2)}).assign_coords({lon:newlon})._to_contiguous_lon()
+                P = P.roll({lon:int(l/2)},roll_coords=True).assign_coords({lon:newlon})._to_contiguous_lon()
             DataArray(P).plot.contourf(
                                         yincrease=False,
                                         yscale=yscale,
