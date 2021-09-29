@@ -1,5 +1,6 @@
 # LIBRARIES
 import xarray as xr
+from xarray.core.formatting import array_repr
 from importlib import reload
 import numpy as np
 import matplotlib.pyplot as plt
@@ -26,8 +27,20 @@ class Dataset(xr.Dataset):
     '''
     __slots__ = ("dataset",)
     
-    # def __init__(self, ds):
-    #     self.__class__.dataset.__set__(self, ds)
+    def __init__(self,*args,keep_structure=False,**kwargs):
+        if not keep_structure and isinstance(args[0],xr.Dataset):
+            arg = args[0]
+            arg = UM.split_w_wind(arg)
+            arg = UM.rename_m01s09i231(arg)
+            arg = UM.add_evaporation(arg)
+            try:
+                args = arg[1:]
+            except:
+                args=[]
+            super().__init__(arg,
+                *args,**kwargs)
+        else:
+            super().__init__(*args,**kwargs)
 
     def __add__(self,other):
         self=self.copy()
@@ -346,6 +359,18 @@ class Dataset(xr.Dataset):
         return seasonal_time_series(self,first_month_num=first_month_num,
                                     update_attrs=update_attrs)
 
+    def add_evaporation(self):
+        if ("evaporation_flux_from_open_sea" in self) and ("evaporation_from_soil_surface" in self):
+            return UM.add_evaporation(self)
+
+    def rename_m01s09i231(self):
+        if "m01s09i231" in self:
+            return UM.rename_m01s09i231(self)
+    
+    def split_w_wind(self):
+        if "upward_air_velocity" in self:
+            return UM.split_w_wind(self)
+
 class DataArray(xr.DataArray):
     '''
     Wrapper for xarray.DataArray class in order to add user-defined functions
@@ -353,8 +378,12 @@ class DataArray(xr.DataArray):
     '''
     __slots__ = ("dataarray",)
 
-    # def __init__(self, ds):
-    #     self.__class__.dataarray.__set__(self, ds)
+    def __init__(self,*args,**kwargs):
+        if isinstance(args[0],xr.DataArray):
+            arg = args[0]
+            super().__init__(arg.data,coords=arg.coords,dims=arg.dims,name=arg.name, attrs=arg.attrs)
+        else:
+            super().__init__(*args,**kwargs)
 
     def __add__(self,other):
         attrs=self.attrs
@@ -1100,7 +1129,7 @@ class UM:
     def add_evaporation(x):
         '''
         Function to add the variable "evaporation" to the Dataset.
-        This variable is computed by adding the 2 variables of the dataset "evaporation_flux_from_open_sea" and "evaporation_from_soil_surface".
+        This variable is computed by merging the 2 variables of the dataset "evaporation_flux_from_open_sea" and "evaporation_from_soil_surface".
 
         Arguments
         ----------
@@ -1113,30 +1142,39 @@ class UM:
 
         New Dataset containing the "evaporation" variable.
         '''
-    
-        variables = ["evaporation_flux_from_open_sea","evaporation_from_soil_surface"]
-        for v in variables:
-            if v not in x.variables: raise Exception('Current Dataset doesn"t include the variable "{}".'.format(v))
-        return x.assign(evaporation=x[variables[0]].where(x[variables[0]] <= 100,0) + 
-                        x[variables[1]].where(x[variables[1]] <= 100,0))
+
+        if 'evaporation' in x.variables: 
+            return x
+        else:
+            variables = ["evaporation_flux_from_open_sea","evaporation_from_soil_surface"]
+            for v in variables:
+                if v not in x.variables: raise Exception(f'Current Dataset doesn"t include the variable "{v}".')
+            return x.assign(evaporation=x[variables[0]].where(x[variables[0]] <= 100,0) + 
+                            x[variables[1]].where(x[variables[1]] <= 100,0))
 
     @staticmethod
     def rename_m01s09i231(x):
         '''
         Function to rename the variable m01s09i231 of UM model to combined_cloud_amount.
         '''
-        return x.rename_vars({"m01s09i231":"combined_cloud_amount"})
+        if "combined_cloud_amount" in x.variables:
+            return x
+        else:
+            return x.rename_vars({"m01s09i231":"combined_cloud_amount"})
 
     @staticmethod
     def split_w_wind(x):
         '''
         Function to split w component of winds into w_up and w_down
         '''
-        d=x["upward_air_velocity"]
-        d_up=d.where(d>0,0)
-        d_down=-d.where(d<0,0)
-        d_overtuning=d_down-d_up
-        return x.assign({"omega_up":d_up,"omega_down":d_down,"omega_overtuning":d_overtuning})
+        if 'omega_up' in x.variables:
+            return x
+        else:
+            d=x["upward_air_velocity"]
+            d_up=d.where(d>0,0)
+            d_down=-d.where(d<0,0)
+            d_overtuning=d_down-d_up
+            return x.assign({"omega_up":d_up,"omega_down":d_down,"omega_overtuning":d_overtuning})
 
     @staticmethod
     def to_mm_per_day(x):
@@ -2829,21 +2867,9 @@ def open_dataarray(x,**open_dataarray_kwargs):
 
     return DataArray(xr.open_dataarray(x,**open_dataarray_kwargs))
 
-def open_mfdataset(x,**open_mfdataset_kwargs):
-    '''
-    Function analogous to xarray.open_mfdataset which parse the input, applying the following functions:
-        - Add_evaporation
-        - Rename_m01s09i231
-        - Split_w_wind
-    '''
+def open_mfdataset(x,**open_mfdataset_kwargs): 
     d=xr.open_mfdataset(x,**open_mfdataset_kwargs)
-    if ("evaporation_flux_from_open_sea" in d) and ("evaporation_from_soil_surface" in d):
-        d=UM.add_evaporation(d)
-    if "m01s09i231" in d:
-        d=UM.rename_m01s09i231(d)
-    if "upward_air_velocity" in d:
-        d=UM.split_w_wind(d)
-    return d
+    return Dataset(d)
 # ============================================================================ #
 # ============================================================================ #
 # ============================================================================ #
