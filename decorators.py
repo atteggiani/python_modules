@@ -1,16 +1,15 @@
-def timer(func):
-    """Print the runtime of the decorated function"""
+def timed(func):
+    """Timer decorator to benchmark functions."""
     from functools import wraps
     import time
     @wraps(func)
-    def wrapper_timer(*args, **kwargs):
+    def wrapper_timed(*args, **kwargs):
         start_time = time.perf_counter()    # 1
         value = func(*args, **kwargs)
-        end_time = time.perf_counter()      # 2
-        run_time = end_time - start_time    # 3
-        print(f"Finished {func.__name__!r} in {run_time:.4f} secs")
+        run_time = (time.perf_counter() - start_time).microseconds / 1e6
+        print(f"Finished {func.__name__!r} in {run_time:.4f} seconds")
         return value
-    return wrapper_timer
+    return wrapper_timed
     
 def profiler(_func=None,outpath=None):
     """
