@@ -2312,8 +2312,8 @@ def average(x, dim=None, weights=None,**kwargs):
             total_weights = weights.where(x.notnull()).sum(dim)
         else:
             total_weights = weights.sum(dim)
-        numerator = xr.apply_ufunc(lambda a,b: a*b,x, weights,**kwargs).sum(dim)
-        return DataArray(xr.apply_ufunc(lambda a,b: a/b,numerator, total_weights,**kwargs),attrs=attrs)
+        numerator = xr.apply_ufunc(lambda a,b: a*b,x, weights,dask='parallelized',**kwargs).sum(dim)
+        return DataArray(xr.apply_ufunc(lambda a,b: a/b,numerator, total_weights,dask='parallelized',**kwargs),attrs=attrs)
 
 def rms(x,copy=True,update_attrs=True):
     '''
@@ -2356,7 +2356,7 @@ def rms(x,copy=True,update_attrs=True):
     gm=global_mean(x**2,update_attrs=False)
     if update_attrs:
         attrs['rms'] = 'Computed root mean square'
-    return func(xr.apply_ufunc(lambda x: np.sqrt(x),gm,keep_attrs=True),attrs=attrs)
+    return func(xr.apply_ufunc(lambda x: np.sqrt(x),gm,keep_attrs=True,dask='parallelized'),attrs=attrs)
 
 def annual_mean(x,num=None,copy=True,update_attrs=True):
     '''
@@ -2490,7 +2490,7 @@ def latitude_mean(x,copy=True,update_attrs=True):
             for var in x: x._variables[var].attrs['latitude_mean'] = 'Computed latitude mean'
     if lat in x.dims:
         weights = np.cos(np.deg2rad(x[lat]))
-        return x.average(dim=lat,weights=weights,keep_attrs=True,dask='parallelized').squeeze()
+        return x.average(dim=lat,weights=weights,keep_attrs=True).squeeze()
     else:
         raise Exception('Impossible to perform latitude mean, no latitude dim.')
 
@@ -2796,6 +2796,7 @@ def seasonal_time_series(x,first_month_num=None,update_attrs=True):
              output_core_dims=[['time']],
              exclude_dims={'time'},
              keep_attrs=True,
+             dask='parallelized',
              ).isel(time=slice(None,None,2))
         return newdata
 
