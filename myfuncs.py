@@ -2865,8 +2865,13 @@ def open_dataarray(x,**open_dataarray_kwargs):
     '''
     Function analogous to xarray.open_dataarray which wraps the result in the custom DataArray class 
     '''
-
     return DataArray(xr.open_dataarray(x,**open_dataarray_kwargs))
+
+def open_dataset(x,**open_dataset_kwargs):
+    '''
+    Function analogous to xarray.open_dataset which wraps the result in the custom Dataset class 
+    '''
+    return Dataset(xr.open_dataset(x,**open_dataset_kwargs))
 
 def open_mfdataset(x,**open_mfdataset_kwargs): 
     d=xr.open_mfdataset(x,**open_mfdataset_kwargs)
