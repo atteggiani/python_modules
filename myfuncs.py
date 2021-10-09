@@ -18,6 +18,8 @@ from matplotlib.ticker import MultipleLocator
 from collections.abc import Iterable
 from regionmask.defined_regions import srex as srex_regions
 from scipy import stats
+import dask
+
 plt.rcParams['hatch.linewidth']=0.3
 
 class Dataset(xr.Dataset):
@@ -41,216 +43,6 @@ class Dataset(xr.Dataset):
                 *args,**kwargs)
         else:
             super().__init__(*args,**kwargs)
-
-    # def __add__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'Dataset'):
-    #         for var in self:
-    #             if var in [v for v in other]: self[var]=self[var]+other[var]
-    #             else: self[var]=self[var]
-    #     elif check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         for var in self:
-    #             if var == other.name: self[var]=self[var]+other
-    #             else: self[var]=self[var]
-    #     else:
-    #         for var in self:
-    #             self[var]=self[var]+other
-    #     return self
-
-    # def __radd__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         self=other+self[other.name]
-    #     else:
-    #         for var in self:
-    #             self[var]=other+self[var]
-    #     return self
-
-    # def __sub__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'Dataset'):
-    #         for var in self:
-    #             if var in [v for v in other]: self[var]=self[var]-other[var]
-    #             else: self[var]=self[var]
-    #     elif check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         for var in self:
-    #             if var == other.name: self[var]=self[var]-other
-    #             else: self[var]=self[var]
-    #     else:
-    #         for var in self:
-    #             self[var]=self[var]-other
-    #     return self
-
-    # def __rsub__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         self=other-self[other.name]
-    #     else:
-    #         for var in self:
-    #             self[var]=other-self[var]
-    #     return self
-
-    # def __mul__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'Dataset'):
-    #         for var in self:
-    #             if var in [v for v in other]: self[var]=self[var]*other[var]
-    #             else: self[var]=self[var]
-    #     elif check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         for var in self:
-    #             if var == other.name: self[var]=self[var]*other
-    #             else: self[var]=self[var]
-    #     else:
-    #         for var in self:
-    #             self[var]=self[var]*other
-    #     return self
-
-    # def __rmul__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         self=other*self[other.name]
-    #     else:
-    #         for var in self:
-    #             self[var]=other*self[var]
-    #     return self
-
-    # def __truediv__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'Dataset'):
-    #         for var in self:
-    #             if var in [v for v in other]: self[var]=self[var]/other[var]
-    #             else: self[var]=self[var]
-    #     elif check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         for var in self:
-    #             if var == other.name: self[var]=self[var]/other
-    #             else: self[var]=self[var]
-    #     else:
-    #         for var in self:
-    #             self[var]=self[var]/other
-    #     return self
-
-    # def __rtruediv__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         self=other/self[other.name]
-    #     else:
-    #         for var in self:
-    #             self[var]=other/self[var]
-    #     return self
-
-    # def __floordiv__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'Dataset'):
-    #         for var in self:
-    #             if var in [v for v in other]: self[var]=self[var]//other[var]
-    #             else: self[var]=self[var]
-    #     elif check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         for var in self:
-    #             if var == other.name: self[var]=self[var]//other
-    #             else: self[var]=self[var]
-    #     else:
-    #         for var in self:
-    #             self[var]=self[var]//other
-    #     return self
-
-    # def __rfloordiv__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         self=other//self[other.name]
-    #     else:
-    #         for var in self:
-    #             self[var]=other//self[var]
-    #     return self
-
-    # def __pow__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'Dataset'):
-    #         for var in self:
-    #             if var in [v for v in other]: self[var]=self[var]**other[var]
-    #             else: self[var]=self[var]
-    #     elif check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         for var in self:
-    #             if var == other.name: self[var]=self[var]**other
-    #             else: self[var]=self[var]
-    #     else:
-    #         for var in self:
-    #             self[var]=self[var]**other
-    #     return self
-
-    # def __rpow__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         self=other**self[other.name]
-    #     else:
-    #         for var in self:
-    #             self[var]=other**self[var]
-    #     return self
-
-    # def __mod__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'Dataset'):
-    #         for var in self:
-    #             if var in [v for v in other]: self[var]=self[var]%other[var]
-    #             else: self[var]=self[var]
-    #     elif check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         for var in self:
-    #             if var == other.name: self[var]=self[var]%other
-    #             else: self[var]=self[var]
-    #     else:
-    #         for var in self:
-    #             self[var]=self[var]%other
-    #     return self
-
-    # def __rmod__(self,other):
-    #     self=self.copy()
-    #     if check_xarray(other,'DataArray'):
-    #         if other.name not in [v for v in self]:
-    #             raise Exception('Impossible to compute operation. Data variable'+
-    #                             ' names mismatch.')
-    #         self=other%self[other.name]
-    #     else:
-    #         for var in self:
-    #             self[var]=other%self[var]
-    #     return self
 
     def __getitem__(self, key):
         """Access variables or coordinates this dataset as a
@@ -370,6 +162,9 @@ class Dataset(xr.Dataset):
     def split_w_wind(self):
         if "upward_air_velocity" in self:
             return UM.split_w_wind(self)
+    
+    def to_pressure_lev(self,data_vars=None):
+        return UM.to_pressure_lev(self,data_vars=data_vars)        
 
 class DataArray(xr.DataArray):
     '''
@@ -1195,7 +990,49 @@ class UM:
             else: return x
         else:
             raise Exception("Data units not understood")
+
+    @staticmethod
+    def to_pressure_lev(x,data_vars=None):
+        from metpy.interpolate import log_interpolate_1d
+        from metpy.units import units
+
+        if 'air_pressure' not in x:
+            return
+        if data_vars is None:
+            data_vars=['combined_cloud_amount',
+                    'air_temperature_0',
+                    'large_scale_rainfall_flux',
+                    'tendency_of_air_temperature_due_to_longwave_heating',
+                    'tendency_of_air_temperature_due_to_longwave_heating_assuming_clear_sky',
+                    'tendency_of_air_temperature_due_to_shortwave_heating',
+                    'tendency_of_air_temperature_due_to_shortwave_heating_assuming_clear_sky',
+                    ]
+        plevs = [1000, 925, 850, 700,
+                600, 500, 400, 300,
+                250, 200, 150, 100,
+                70, 50, 30, 20] * units.hPa
+        pr = (x['air_pressure']).values * units.Pa
+        for var in data_vars:
+            if var not in x: continue
+            data = x[var]        
+            new=np.flip(
+                log_interpolate_1d(plevs, pr, data.values, axis=1),
+                axis=1)
+            new_name=data.name + "_plev"
             
+            converted=xr.DataArray(data=dask.array.from_array(new,name=new_name),
+                coords=(data.time,
+                        x.pressure,
+                        data.latitude,
+                        data.longitude),
+                dims=("time","pressure","latitude","longitude"),
+                attrs={"standard_name":new_name,
+                    "units":"K",
+                    "grid_mapping":"latitude_longitude",
+                    "Converted":"Converted from 'model_level_number' vertical coordinates using metpy's 'log_interpolate_1d' function."})
+            x=x.assign({new_name:converted})
+        return x
+
 class GREB:
     
     def __init__(self):
@@ -2867,11 +2704,12 @@ def open_dataarray(x,**open_dataarray_kwargs):
     '''
     return DataArray(xr.open_dataarray(x,**open_dataarray_kwargs))
 
-def open_dataset(x,**open_dataset_kwargs):
+def open_dataset(x,chunks=None,**open_dataset_kwargs):
     '''
     Function analogous to xarray.open_dataset which wraps the result in the custom Dataset class 
     '''
-    return Dataset(xr.open_dataset(x,**open_dataset_kwargs))
+    if chunks is None: chunks == -1
+    return Dataset(xr.open_dataset(x,chunks=chunks,**open_dataset_kwargs))
 
 def open_mfdataset(x,**open_mfdataset_kwargs): 
     d=xr.open_mfdataset(x,**open_mfdataset_kwargs)
