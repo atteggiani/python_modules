@@ -123,6 +123,9 @@ class Dataset(xr.Dataset):
     def latitude_mean(self,copy=True,update_attrs=True):
         return latitude_mean(self,copy=copy,update_attrs=update_attrs)
 
+    def longitude_mean(self,copy=True,update_attrs=True):
+        return longitude_mean(self,copy=copy,update_attrs=update_attrs)        
+
     def global_mean(self,copy=True,update_attrs=True):
         return global_mean(self,copy=copy,update_attrs=update_attrs)
 
@@ -179,62 +182,6 @@ class DataArray(xr.DataArray):
             super().__init__(arg.data,coords=arg.coords,dims=arg.dims,name=arg.name, attrs=arg.attrs)
         else:
             super().__init__(*args,**kwargs)
-
-    # def __add__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(xr.DataArray(self)+other,attrs=attrs)
-
-    # def __radd__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(other+xr.DataArray(self),attrs=attrs)
-
-    # def __sub__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(xr.DataArray(self)-other,attrs=attrs)
-
-    # def __rsub__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(other-xr.DataArray(self),attrs=attrs)
-
-    # def __mul__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(xr.DataArray(self)*other,attrs=attrs)
-
-    # def __rmul__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(other*xr.DataArray(self),attrs=attrs)
-
-    # def __truediv__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(xr.DataArray(self)/other,attrs=attrs)
-
-    # def __rtruediv__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(other/xr.DataArray(self),attrs=attrs)
-
-    # def __floordiv__(self, other):
-    #     attrs=self.attrs
-    #     return DataArray(xr.DataArray(self)//other,attrs=attrs)
-
-    # def __floordiv__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(other//xr.DataArray(self),attrs=attrs)
-
-    # def __pow__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(xr.DataArray(self)**other,attrs=attrs)
-
-    # def __rpow__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(other**xr.DataArray(self),attrs=attrs)
-
-    # def __mod__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(xr.DataArray(self)%other,attrs=attrs)
-
-    # def __rmod__(self,other):
-    #     attrs=self.attrs
-    #     return DataArray(other%xr.DataArray(self),attrs=attrs)
 
     def get_spatial_coords(self):
         lats=["latitude","latitude_0","lat"]
@@ -786,6 +733,9 @@ class DataArray(xr.DataArray):
     
     def latitude_mean(self,copy=True,update_attrs=True):
         return latitude_mean(self,copy=copy,update_attrs=update_attrs)
+
+    def longitude_mean(self,copy=True,update_attrs=True):
+        return longitude_mean(self,copy=copy,update_attrs=update_attrs)        
 
     def global_mean(self,copy=True,update_attrs=True):
         return global_mean(self,copy=copy,update_attrs=update_attrs)
@@ -2316,7 +2266,7 @@ def latitude_mean(x,copy=True,update_attrs=True):
 
     '''
     if not check_xarray(x): exception_xarray()
-    lat,lon=x.get_spatial_coords()
+    lat,lon = x.get_spatial_coords()
     if 'latitude_mean' in x.attrs: return x
     if 'global_mean' in x.attrs:
         raise Exception('Cannot perform the mean over latitude on a variable on which global mean has already been performed')
@@ -2330,6 +2280,46 @@ def latitude_mean(x,copy=True,update_attrs=True):
         return x.average(dim=lat,weights=weights,keep_attrs=True).squeeze()
     else:
         raise Exception('Impossible to perform latitude mean, no latitude dim.')
+
+def longitude_mean(x,copy=True,update_attrs=True):
+    '''
+    Compute the mean over longitude dimension.
+
+    Arguments
+    ----------
+    x : xarray.Dataset or xarray.DataArray object
+       array to compute the global mean on
+
+    Parameters
+    ----------
+    copy : Bool
+       set to True (default) if you want to return a copy of the argument in
+       input; set to False if you want to overwrite the input argument.
+    update_attrs : Bool
+        If set to True (default), the new DataArray/Dataset will have an attribute
+        as a reference that the "global_mean" function has been applied to it.
+
+    Returns
+    ----------
+    xarray.Dataset or xarray.DataArray
+
+    New Dataset or DataArray object with average applied to its longitude.
+
+    '''
+    if not check_xarray(x): exception_xarray()
+    lat,lon = x.get_spatial_coords()
+    if 'longitude_mean' in x.attrs: return x
+    if 'global_mean' in x.attrs:
+        raise Exception('Cannot perform the mean over longitude on a variable on which global mean has already been performed')
+    if copy: x = x.copy()
+    if update_attrs:
+        x.attrs['longitude_mean'] = 'Computed longitude mean'
+        if check_xarray(x,'Dataset'):
+            for var in x: x._variables[var].attrs['longitude_mean'] = 'Computed longitude mean'
+    if lon in x.dims:
+        return x.mean(dim=lon,keep_attrs=True).squeeze()
+    else:
+        raise Exception('Impossible to perform longitude mean, no latitude dim.')
 
 def global_mean(x,copy=True,update_attrs=True):
     '''
@@ -2356,7 +2346,6 @@ def global_mean(x,copy=True,update_attrs=True):
 
     New Dataset or DataArray object with average applied to its "lat" and
     "lon" dimension. The average along "lat" dimesnion is weighted with cos(lat)
-    weights.
 
     '''
     if not check_xarray(x): exception_xarray()
@@ -2712,8 +2701,19 @@ def open_dataset(x,chunks=None,**open_dataset_kwargs):
     return Dataset(xr.open_dataset(x,chunks=chunks,**open_dataset_kwargs))
 
 def open_mfdataset(x,**open_mfdataset_kwargs): 
+    '''
+    Function analogous to xarray.open_mfdataset which wraps the result in the custom Dataset class 
+    '''
     d=xr.open_mfdataset(x,**open_mfdataset_kwargs)
     return Dataset(d)
+
+def load_dataset(x,chunks=None,**load_dataset_kwargs):
+    '''
+    Function analogous to xarray.load_dataset which wraps the result in the custom Dataset class 
+    '''
+    if chunks is None: chunks == -1
+    return Dataset(xr.load_dataset(x,chunks=chunks,**load_dataset_kwargs))
+
 # ============================================================================ #
 # ============================================================================ #
 # ============================================================================ #
