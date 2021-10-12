@@ -2439,6 +2439,8 @@ def anomalies(x,x_base=None,copy=True,update_attrs=True):
     New Dataset or DataArray object being the difference between x and x_base
 
     '''
+    def sel_dataarray(x):
+        return x[list(x.keys())[0]]
 
     def fun(y):
         attrs = y.attrs
@@ -2461,12 +2463,12 @@ def anomalies(x,x_base=None,copy=True,update_attrs=True):
         else:
             ctrfile=GREB.control_def_file()
         if 'grouped_by' in x.attrs:
-            x_base = GREB.from_binary(ctrfile,x.attrs['grouped_by'])
+            x_base = sel_dataarray(GREB.from_binary(ctrfile,x.attrs['grouped_by']))
         elif (any(['annual_mean' in x.attrs,'seasonal_cycle' in x.attrs,'global_mean' in x.attrs,'rms' in x.attrs,'latitude_mean'])) or \
             (ctrfile == GREB.cloud_def_file()) or (ctrfile == GREB.solar_def_file()):
-            x_base = GREB.from_binary(ctrfile)
+            x_base = sel_dataarray(GREB.from_binary(ctrfile))
         else:
-            x_base = GREB.from_binary(ctrfile).apply(fun,keep_attrs=True)
+            x_base = sel_dataarray(GREB.from_binary(ctrfile).apply(fun,keep_attrs=True))
         # Change to Celsius if needed
         temp = ['tsurf','tocean','tatmos']
         if check_xarray(x,'DataArray'):
@@ -2477,8 +2479,11 @@ def anomalies(x,x_base=None,copy=True,update_attrs=True):
             for t in temp:
                 if (t in vars) and (x[t].attrs['units'] == 'C'):
                     x_base = x_base.to_celsius(copy=False)
-    else:
-        if not check_xarray(x_base): exception_xarray()
+    elif check_xarray(x_base,'Dataset'):
+        x_base = sel_dataarray(x_base)
+    elif not check_xarray(x_base,'DataArray'): 
+        exception_xarray()
+    
     if 'annual_mean' in x.attrs: 
         num= int(x.attrs['annual_mean'].split()[4])
         x_base = annual_mean(x_base,num=num)
