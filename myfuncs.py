@@ -32,9 +32,12 @@ class Dataset(xr.Dataset):
     def __init__(self,*args,keep_structure=False,**kwargs):
         if not keep_structure and isinstance(args[0],xr.Dataset):
             arg = args[0]
-            arg = UM.split_w_wind(arg)
-            arg = UM.rename_m01s09i231(arg)
-            arg = UM.add_evaporation(arg)
+            if "upward_air_velocity" in arg:
+                arg = UM.split_w_wind(arg)
+            if "m01s09i231" in arg:
+                arg = UM.rename_m01s09i231(arg)
+            if ("evaporation_flux_from_open_sea" in arg) and ("evaporation_from_soil_surface" in arg):
+                arg = UM.add_evaporation(arg)
             try:
                 args = arg[1:]
             except:
@@ -153,18 +156,6 @@ class Dataset(xr.Dataset):
     def seasonal_time_series(self,first_month_num=None,update_attrs=True):
         return seasonal_time_series(self,first_month_num=first_month_num,
                                     update_attrs=update_attrs)
-
-    def add_evaporation(self):
-        if ("evaporation_flux_from_open_sea" in self) and ("evaporation_from_soil_surface" in self):
-            return UM.add_evaporation(self)
-
-    def rename_m01s09i231(self):
-        if "m01s09i231" in self:
-            return UM.rename_m01s09i231(self)
-    
-    def split_w_wind(self):
-        if "upward_air_velocity" in self:
-            return UM.split_w_wind(self)
     
     def to_pressure_lev(self,data_vars=None):
         return UM.to_pressure_lev(self,data_vars=data_vars)        
