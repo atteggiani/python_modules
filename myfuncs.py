@@ -367,7 +367,7 @@ class DataArray(xr.DataArray):
                                                 )
         ax.set_title(title)
         if outpath is not None:
-            plt.savefig(outpath, format = 'png',**save_kwargs)
+            plt.savefig(outpath,**save_kwargs)
         return im
 
     def _get_param(self,nlev=None):
@@ -676,7 +676,7 @@ class DataArray(xr.DataArray):
         else:
             save_kwargs = {'dpi':300, 'bbox_inches':'tight'}
         if outpath is not None:
-            plt.savefig(outpath, format = 'png',**save_kwargs)
+            plt.savefig(outpath,**save_kwargs)
         return im
 
     def _to_contiguous_lon(self):
