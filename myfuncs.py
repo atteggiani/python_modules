@@ -207,6 +207,7 @@ class DataArray(xr.DataArray):
                 coast_kwargs = None,
                 land_kwargs = None,
                 save_kwargs = None,
+                grid=False,
                 **contourf_kwargs):
 
         '''
@@ -312,19 +313,21 @@ class DataArray(xr.DataArray):
                 gm=self.global_mean().values
                 rms=self.rms().values
                 txt = (f'gmean = {gm:{fmt}}  |  rms = {rms:{fmt}}').format(gm,rms)
-                ax.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                ax.text(0.5,-0.085,txt,verticalalignment='top',horizontalalignment='center',
                         transform=ax.transAxes,fontsize=fs, weight='bold')
             elif statistics == 'gmean':
                 gm=self.global_mean().values
                 txt = (f'gmean = {gm:{fmt}}')
-                ax.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                ax.text(0.5,-0.85,txt,verticalalignment='top',horizontalalignment='center',
                         transform=ax.transAxes,fontsize=fs, weight='bold')
             elif statistics == 'rms':
                 rms=self.rms().values
                 txt = (f'rms = {rms:{fmt}}')
-                ax.text(0.5,-0.05,txt,verticalalignment='top',horizontalalignment='center',
+                ax.text(0.5,-0.085,txt,verticalalignment='top',horizontalalignment='center',
                         transform=ax.transAxes,fontsize=fs, weight='bold')
             else: raise Exception("Invalid string for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
+        elif (statistics is None) or (not statistics):
+            pass
         else: raise Exception("Invalid type for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
       
         if isinstance(t_student,bool):
@@ -365,6 +368,13 @@ class DataArray(xr.DataArray):
                                                 alpha=0,
                                                 add_colorbar=False,
                                                 )
+        if grid:
+            gl = ax.gridlines(crs=projection, linewidth=1, color='grey', alpha=0.3, linestyle='--',draw_labels=True)
+            gl.top_labels = False
+            gl.left_labels = True
+            gl.right_labels=False
+            gl.xlines = True
+
         ax.set_title(title)
         if outpath is not None:
             plt.savefig(outpath,**save_kwargs)
