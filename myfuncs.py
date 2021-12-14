@@ -168,18 +168,17 @@ class DataArray(xr.DataArray):
     __slots__ = ("dataarray",)
     
     def __init__(self,*args,**kwargs):
-        if 'data' in kwargs:
-            data=kwargs['data']
-        elif len(args)>0:
+        arguments=['data','coords','dims','name','attrs','indexes','fastpath']
+        if len(args)>0:
             data=args[0]
+        elif 'data' in kwargs:
+            data=kwargs.pop('data')
         else:
-            raise Exception("Data not present!!")
-        if isinstance(data,xr.DataArray):
-            for key in ['coords','dims','name','attrs']:
-                if key not in kwargs:
-                    if key in data:
-                        kwargs[key]=data[key]
-        super().__init__(*args,**kwargs)
+            data = False
+        if isinstance(data,xr.DataArray):         
+            super().__init__(data=data.data,coords=data.coords,dims=data.dims,name=data.name,attrs=data.attrs)
+        else:
+            super().__init__(data,*args[1:],**kwargs)
 
     def get_spatial_coords(self):
         lats=["latitude","latitude_0","lat"]
