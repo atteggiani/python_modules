@@ -166,13 +166,20 @@ class DataArray(xr.DataArray):
 
     '''
     __slots__ = ("dataarray",)
-
+    
     def __init__(self,*args,**kwargs):
-        if isinstance(args[0],xr.DataArray):
-            arg = args[0]
-            super().__init__(arg.data,coords=arg.coords,dims=arg.dims,name=arg.name, attrs=arg.attrs)
+        if 'data' in kwargs:
+            data=kwargs['data']
+        elif len(args)>0:
+            data=args[0]
         else:
-            super().__init__(*args,**kwargs)
+            raise Exception("Data not present!!")
+        if isinstance(data,xr.DataArray):
+            for key in ['coords','dims','name','attrs']:
+                if key not in kwargs:
+                    if key in data:
+                        kwargs[key]=data[key]
+        super().__init__(*args,**kwargs)
 
     def get_spatial_coords(self):
         lats=["latitude","latitude_0","lat"]
@@ -195,7 +202,8 @@ class DataArray(xr.DataArray):
             coords.append(None)
         return coords
 
-    def plotvar(self, projection = None,
+    def plotvar(self, 
+                projection = None,
                 outpath = None,
                 name = None,
                 title = None,
@@ -207,7 +215,7 @@ class DataArray(xr.DataArray):
                 coast_kwargs = None,
                 land_kwargs = None,
                 save_kwargs = None,
-                grid=False,
+                grid=True,
                 **contourf_kwargs):
 
         '''
@@ -245,8 +253,10 @@ class DataArray(xr.DataArray):
         if nlev is None: nlev=100
         if units is None:
             units = _get_var(self)[2]
-        if projection is None: projection = ccrs.Robinson()
-        elif not projection: projection = ccrs.PlateCarree()
+        if projection is None or not projection: 
+            projection = ccrs.PlateCarree()
+        elif projection != ccrs.PlateCarree():
+            grid=False
         if 'ax' not in contourf_kwargs:
             contourf_kwargs['ax'] = plt.axes(projection=projection)
         ax=contourf_kwargs['ax']
@@ -286,8 +296,9 @@ class DataArray(xr.DataArray):
         else:
             save_kwargs = {'dpi':300, 'bbox_inches':'tight'}
 
-        im=self._to_contiguous_lon().plot.contourf(transform=ccrs.PlateCarree(),
-                                                    **contourf_kwargs)
+        im=self._to_contiguous_lon().plot.contourf(
+            transform=ccrs.PlateCarree(),
+            **contourf_kwargs)
 
         ax.add_feature(cfeature.COASTLINE,**coast_kwargs)
         if (self.name == 'tocean'):
@@ -309,21 +320,22 @@ class DataArray(xr.DataArray):
             else: statistics = statistics['value']
 
         if isinstance(statistics,str):
+            x_txt,y_txt = 0.5,-0.1
             if statistics == 'all':
                 gm=self.global_mean().values
                 rms=self.rms().values
                 txt = (f'gmean = {gm:{fmt}}  |  rms = {rms:{fmt}}').format(gm,rms)
-                ax.text(0.5,-0.085,txt,verticalalignment='top',horizontalalignment='center',
+                ax.text(x_txt,y_txt,txt,verticalalignment='top',horizontalalignment='center',
                         transform=ax.transAxes,fontsize=fs, weight='bold')
             elif statistics == 'gmean':
                 gm=self.global_mean().values
                 txt = (f'gmean = {gm:{fmt}}')
-                ax.text(0.5,-0.85,txt,verticalalignment='top',horizontalalignment='center',
+                ax.text(x_txt,y_txt,txt,verticalalignment='top',horizontalalignment='center',
                         transform=ax.transAxes,fontsize=fs, weight='bold')
             elif statistics == 'rms':
                 rms=self.rms().values
                 txt = (f'rms = {rms:{fmt}}')
-                ax.text(0.5,-0.085,txt,verticalalignment='top',horizontalalignment='center',
+                ax.text(x_txt,y_txt,txt,verticalalignment='top',horizontalalignment='center',
                         transform=ax.transAxes,fontsize=fs, weight='bold')
             else: raise Exception("Invalid string for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
         elif (statistics is None) or (not statistics):
@@ -774,12 +786,12 @@ class DataArray(xr.DataArray):
         return seasonal_time_series(self,first_month_num=first_month_num,
                                     update_attrs=update_attrs)
 
-    def t_student_probability(self,y,season=None):
-        return t_student_probability(self,y,season=season)
+    def t_student_probability(self,y,season=None,num_years=None):
+        return t_student_probability(self,y,season=season,num_years=num_years)
 
-    def to_mm_per_day(self,copy=True):  
+    def to_mm_per_day(self,copy=True,force=None):  
         if copy: self = self.copy()
-        return UM.to_mm_per_day(self)
+        return UM.to_mm_per_day(self,force)
 
 class UM:
     longitude = np.array([  0.  ,   3.75,   7.5 ,  11.25,  15.  ,  18.75,  22.5 ,  26.25,
@@ -925,18 +937,19 @@ class UM:
             return x.assign({"omega_up":d_up,"omega_down":d_down,"omega_overtuning":d_overtuning})
 
     @staticmethod
-    def to_mm_per_day(x):
+    def to_mm_per_day(x,force=False):
         '''
         Function to convert data with units from "kg m-2 s-1" to "mm day-1"
         '''
         alpha = 86400
         if 'units' not in x.attrs:
             x.attrs['units']="TEMP_UNITS"
-        if (x.attrs['units'] in ["kg m-2 s-1","kg/m^2/s"]):
+        if (x.attrs['units'] in ["kg m-2 s-1","kg/m^2/s"]) or force:
             x.attrs['units']="mm/day"
             return x*alpha
         elif (x.name in ["precipitation_flux","evaporation_flux_from_open_sea",
-                        "evaporation_from_soil_surface","evaporation"]):
+                        "evaporation_from_soil_surface","evaporation",
+                        "convective_rainfall_flux"]):
             if x.attrs['units'] not in ["mm/day","mm day-1","mm d-1"]:
                 x.attrs['units']="mm/day"
                 return x*alpha
@@ -2650,7 +2663,7 @@ def seasonal_time_series(x,first_month_num=None,update_attrs=True):
     dims.remove('time')
     return newdata.transpose('time',*dims)
 
-def t_student_probability(x,y,season=None):
+def t_student_probability(x,y,season=None,num_years=None):
 
     '''
     Perform the t-student test over 2 different Datarrays (groups of samples).
@@ -2675,18 +2688,26 @@ def t_student_probability(x,y,season=None):
     New DataArray containing the probabilities associated with the t-distribution for
     the two Dataarrays, along the specified dimension.
     '''
+    x1,y1=x,y
     if season is not None:
         if season in ['DJF','MAM','JJA','SON']:
-            x1 = x.isel(time=x.groupby('time.season').groups[season])
-            y1 = y.isel(time=y.groupby('time.season').groups[season])
+            indx = x.isel(time=x.groupby('time.season').groups[season])
+            indy = y.isel(time=y.groupby('time.season').groups[season])
+            x1=x.isel(time=indx)
+            y1=y.isel(time=indy)
         else:
             raise Exception("season must be a value among 'DJF','MAM','JJA' and 'SON'.")
     try:
-        x1=x.groupby('time.year').mean('time')
-        y1=y.groupby('time.year').mean('time')
+        x1=x1.groupby('time.year').mean('time').rename(year='time')
+        y1=y1.groupby('time.year').mean('time').rename(year='time')
     except:
         pass
     
+    if num_years is None or num_years > len(x1['time']): 
+        num_years = len(x1['time'])
+    x1=x1.isel(time=slice(-num_years,None))
+    y1=y1.isel(time=slice(-num_years,None))
+
     p=stats.ttest_ind(x1,y1,nan_policy="omit").pvalue
     p[np.where(np.isnan(p))]=1
     dims=list(x.dims)
