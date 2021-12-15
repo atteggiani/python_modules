@@ -84,27 +84,6 @@ class Dataset(xr.Dataset):
             coords.append(None)
         return coords
 
-    def plotall(self,
-                outpath = None):
-        '''
-        Plots all the variables of the Dataset using DataArray.plotvar function.
-
-        '''
-        
-        if not os.path.isdir(outpath):
-            raise Exception("outpath needs to be the directory where all the plots will be saved")
-        if "annual_mean" in self.attrs:
-            op = "amean"
-        elif "seasonal_cycle" in self.attrs:
-            op = "seascyc"
-        if "anomalies" in self.attrs:
-            op = "{}.anom".format(op)
-
-        for var_name in self:
-            full_outpath = os.path.join(outpath,".".join((var_name,op,"png")))
-            plt.figure()
-            self[var_name].plotvar(outpath = full_outpath)
-
     def annual_mean(self,num=None,copy=True,update_attrs=True):
         return annual_mean(self,num=num,copy=copy,update_attrs=update_attrs)
 
@@ -218,7 +197,7 @@ class DataArray(xr.DataArray):
                 **contourf_kwargs):
 
         '''
-        Plots GREB variables with associated color maps, scales and projections.
+        Plots DataArray variablewith associated color maps, scales and projections.
 
         '''
 
@@ -289,11 +268,6 @@ class DataArray(xr.DataArray):
             coast_kwargs = {**coast_kwargs}
         else:
             coast_kwargs = {}
-
-        if save_kwargs is not None:
-            save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
-        else:
-            save_kwargs = {'dpi':300, 'bbox_inches':'tight'}
 
         im=self._to_contiguous_lon().plot.contourf(
             transform=ccrs.PlateCarree(),
@@ -387,6 +361,11 @@ class DataArray(xr.DataArray):
             gl.xlines = True
 
         ax.set_title(title)
+
+        if save_kwargs is not None:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
+        else:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight'}
         if outpath is not None:
             plt.savefig(outpath,**save_kwargs)
         return im
@@ -590,6 +569,7 @@ class DataArray(xr.DataArray):
                 t_student=False,
                 outpath = None,
                 save_kwargs = None,
+                double_axis=False,
                 **contourf_kwargs):
 
         if ("latitude" in self.dims) or ("latitude_0" in self.dims) or ("lat" in self.dims):
@@ -612,15 +592,20 @@ class DataArray(xr.DataArray):
             warnings.warn("The nature of the vertical level is not known")
 
         ax = plt.axes() if 'ax' not in contourf_kwargs else contourf_kwargs.pop('ax')
-        if ('add_colorbar' not in contourf_kwargs):contourf_kwargs['add_colorbar']=True
-        if contourf_kwargs['add_colorbar']==True:
-            if 'cbar_kwargs' not in contourf_kwargs: contourf_kwargs['cbar_kwargs'] = dict()
+        if ('add_colorbar' not in contourf_kwargs) or contourf_kwargs['add_colorbar']:
+            contourf_kwargs['add_colorbar']=True
+            if 'cbar_kwargs' not in contourf_kwargs:
+                contourf_kwargs['cbar_kwargs'] = dict()
             if units is not None:
                 contourf_kwargs['cbar_kwargs']['label']=units
             if du is not None:
                 umin=contourf_kwargs['levels'][0]
                 umax=contourf_kwargs['levels'][-1]
                 contourf_kwargs['cbar_kwargs']['ticks']=np.arange(umin,umax+du,du)
+            if (double_axis):
+                lst=['location','orientation','fraction','fraction','shrink','aspect','pad','anchor','panchor']
+                if np.all([p not in contourf_kwargs['cbar_kwargs'] for p in lst]):
+                    contourf_kwargs['cbar_kwargs']['pad']=0.15
 
         if "yscale" not in contourf_kwargs:
             contourf_kwargs['yscale'] = "log" if vertical_levs == "pressure" else "linear"
@@ -681,19 +666,197 @@ class DataArray(xr.DataArray):
             ax.set_xticklabels(["180W","120W","60W","0","60E","120E","180E"])
             ax.xaxis.set_minor_locator(MultipleLocator(10))
         if vertical_levs=="pressure": 
-            ax.set_yticks([1000,800,600,400,200,50])
-            ax.set_yticklabels(["1000","800","600","400","200","50"])
+            yticks=[1000,800,600,400,200,100,50]
+            ax.set_yticks(yticks)
+            ax.set_yticklabels([str(t) for t in yticks])
             ax.set_ylim([1000,50])
+            ax.set_ylabel("Pressure [hPa]")
         elif vertical_levs=="um_levs": 
-            ax.set_ylim([1,32])    
-            ax.set_yticks(np.arange(1,32,6))
-        ax.tick_params(axis='y',which='minor',left=False,right=False)
-        ax.tick_params(axis='y',which='major',left=True,right=True)
-        ax.tick_params(axis='x',which='both',bottom=True,top=True)
+            ax.set_ylim([1,32])
+            yticks=np.arange(1,33)
+            ax.set_yticks(yticks)
+            ticklabels=[str(i) for i in yticks]
+            ticklabels[1::2]=["" for _ in ticklabels[1::2]]    
+            ax.set_yticklabels(ticklabels,fontsize=8)
+            ax.set_ylabel("Model Level Number")
+        ax.grid(ls="--",which='both',alpha=0.7)
+        # Set double axis
+        if double_axis:
+            ax2=ax.twinx()
+            if vertical_levs == "pressure":
+                ax2.set_ylabel('Model Level Number')
+                ax2.set_ylim([1000,50])
+                ax2.set_yscale('log')
+                ax2.set_yticks([1000,900,700,500,200,100,60])
+                ax2.set_yticklabels(['~1','~5','~12','~17','~25','~29','~31'],fontsize=8)
+            elif vertical_levs == "um_levs":
+                ax2.set_ylabel('Pressure [hPa]')
+                ax2.set_ylim([1,32])
+                ax2.set_yticks([1,5,8,10,17,25,29,31])
+                ax2.set_yticklabels(['~1000','~900','~850','~750','~500','~200','~100','~60'],fontsize=8)
+        # Set Title
         if title is None: title=self.name
         ax.set_title(title)
         if save_kwargs is not None:
             save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
+        else:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight'}
+        if outpath is not None:
+            plt.savefig(outpath,**save_kwargs)
+        return im
+
+    def plotprof(self,
+            other_data=None,
+            labels = None,
+            colors = None,
+            timesteps = None,
+            xlim=None,
+            dx=None,
+            title = None,
+            units = None,
+            legend = True,
+            double_axis=False,
+            save_kwargs = None,
+            outpath = None,
+            ):
+        '''Plot DataArray vertical profiles.
+            If time coord is provided, plots the profiles with confidence levels (min|mean|max values)
+            for every vertical level.'''
+
+        if other_data is None:
+            all_data=[self]
+        else:
+            if not isinstance(other_data,list):
+                other_data=[other_data]
+            all_data=[self]+other_data
+        # Check shapes and dims are the same
+        if len(all_data)>1:
+            dims=[d.dims for d in all_data]
+            if dims.count(dims[0]) != len(dims):
+                raise Exception("Variables don't have the same dimensions!")
+            shapes=[d.shape for d in all_data]
+            if shapes.count(shapes[0]) != len(shapes):
+                raise Exception("Variables don't have the same shape!")
+        # Check and set labels
+        if not isinstance(labels,list):
+            labels=[labels]
+        if len(all_data) > len(labels):
+            labels=labels+[None for n in range(len(all_data) - len(labels))]
+        else:
+            labels=labels[:len(all_data)]
+        # Check and set colors
+        def_colors=['blue','darkorange','firebrick',
+                    'darkgreen','m','turquoise',
+                    'rebeccapurple', 'grey']
+        if colors is None:
+            colors=def_colors
+        else:
+            if not isinstance(colors,list):
+                colors=[colors]
+            def_colors=[c for c in def_colors if c not in colors]
+            colors=colors+def_colors
+        if len(all_data) > len(colors):
+            raise Exception(f"{len(all_data)} variables provided but only {len(colors)} colors available.\n \
+                        Please provide {len(all_data)-len(colors)} more colors.")
+        else:
+            colors=colors[:len(all_data)]
+        
+        d=all_data[0]
+        has_time = 'time' in d.dims
+        if has_time and timesteps is None:
+            timesteps = len(d.time)
+        if 'pressure' in d.dims:
+            levs = 'pressure'
+            yincrease = False
+            yscale = "log"
+            plev=True
+            ymin,ymax=1000,50
+            yticks=[1000,800,600,400,200,100,50]
+        elif 'model_level_number' in d.dims:
+            levs = 'model_level_number'
+            yincrease = True
+            yscale = "linear"
+            plev=False
+            ymin,ymax=1,32
+            yticks=np.arange(1,33)
+        else:
+            raise Exception('Vertical levels not present or not understood!')
+
+        for data,label,color in zip(all_data,labels,colors):
+            if plev:
+                data = data.sel(pressure=slice(49,1001))
+            else:
+                data = data.sel(model_level_number=slice(None,32))
+            
+            if has_time:
+                am = data.annual_mean(timesteps)
+                min=data.isel(time=slice(-timesteps,None)).min('time')
+                max=data.isel(time=slice(-timesteps,None)).max('time')
+            else:
+                am = data
+            # Plot
+            im=am.plot(
+                    y=levs,
+                    yincrease=yincrease,
+                    yscale=yscale,
+                    label=label,
+                    color=color)
+            # Draw confidence levels (max, min over time)
+            if has_time:
+                plt.fill_betweenx(y=getattr(am,levs), x1=min, x2=max,
+                                color=color, alpha=0.2)
+        
+        # Draw vertical 0 line
+        plt.vlines(0, ymin, ymax, colors='k', ls='--',lw=0.8)
+        # Set ylim
+        plt.ylim([ymin,ymax])
+        # Set xlim and xticks
+        if xlim is not None:
+            plt.xlim(xlim)
+        if dx is not None:
+            plt.gca().set_xticks(np.arange(xlim[0],xlim[1]+dx,dx))
+        # Set yticks/yticklabels
+        plt.gca().set_yticks(yticks)
+        if plev:
+            plt.gca().set_yticklabels([str(i) for i in yticks])
+        else:
+            ticklabels=[str(i) for i in yticks]
+            ticklabels[1::2]=["" for _ in ticklabels[1::2]]    
+            plt.gca().set_yticklabels(ticklabels,fontsize=8)
+        # Set grid
+        plt.grid(ls="--",which='both',alpha=0.7)
+        # Set legend
+        if legend and np.all([l is not None for l in labels]):
+            plt.legend()
+        # Set units (xlabel)
+        if units is not None:
+            plt.xlabel(units)
+        # Set ylabel
+        if plev:
+            plt.ylabel("Pressure [hPa]")
+        else:
+            plt.ylabel("Model Level Number")
+        # Set double axis
+        if double_axis:
+            ax2=plt.gca().twinx()
+            if plev:
+                ax2.set_ylabel('Model Level Number')
+                ax2.set_ylim([1000,50])
+                ax2.set_yscale('log')
+                ax2.set_yticks([1000,900,700,500,200,100,60])
+                ax2.set_yticklabels(['~1','~5','~12','~17','~25','~29','~31'],fontsize=8)
+            else:
+                ax2.set_ylabel('Pressure [hPa]')
+                ax2.set_ylim([1,32])
+                ax2.set_yticks([1,5,8,10,17,25,29,31])
+                ax2.set_yticklabels(['~1000','~900','~850','~750','~500','~200','~100','~60'],fontsize=8)
+        # Set Title
+        if title is None:
+            title=d.name
+        plt.title(title)
+        # Save plot
+        if save_kwargs is not None:
+            save_kwargs = {'dpi':300, 'bbox_inches':'tight',**save_kwargs}
         else:
             save_kwargs = {'dpi':300, 'bbox_inches':'tight'}
         if outpath is not None:
@@ -830,6 +993,8 @@ class UM:
     
     data_folder = "/g/data3/w48/dm5220/data"
 
+
+
     @staticmethod
     def months(n_char=2):
         if n_char == 2:
@@ -838,11 +1003,7 @@ class UM:
             return ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"]
         else:
             raise Exception("n_char must be either 2 or 3.")
-
-    @staticmethod
-    def streams():
-        return ['a','b','c','d','e','f','g','h','i','j']
-
+    
     @staticmethod
     def ppm2kgkg(x):
         m_air=0.0289644 #kg/mol
