@@ -1,4 +1,5 @@
 # LIBRARIES
+from typing import Type
 import xarray as xr
 from xarray.core.formatting import array_repr
 from importlib import reload
@@ -805,7 +806,7 @@ class DataArray(xr.DataArray):
             if has_time:
                 plt.fill_betweenx(y=getattr(am,levs), x1=min, x2=max,
                                 color=color, alpha=0.2)
-        
+        ax=plt.gca()
         # Draw vertical 0 line
         plt.vlines(0, ymin, ymax, colors='k', ls='--',lw=0.8)
         # Set ylim
@@ -850,10 +851,11 @@ class DataArray(xr.DataArray):
                 ax2.set_ylim([1,32])
                 ax2.set_yticks([1,5,8,10,17,25,29,31])
                 ax2.set_yticklabels(['~1000','~900','~850','~750','~500','~200','~100','~60'],fontsize=8)
+            # ax2.set_title(None)
         # Set Title
         if title is None:
             title=d.name
-        plt.title(title)
+        ax.set_title(title)
         # Save plot
         if save_kwargs is not None:
             save_kwargs = {'dpi':300, 'bbox_inches':'tight',**save_kwargs}
@@ -991,9 +993,14 @@ class UM:
                                 18820.8203125, 20246.599609375, 21808.13671875, 23542.18359375, 
                                 25520.9609375, 27901.357421875, 31063.888671875, 36081.76171875])
     
+    pressure_levels = np.array(
+                [1000, 925, 850, 700,
+                600, 500, 400, 300,
+                250, 200, 150, 100,
+                70, 50, 30, 20],
+                dtype=np.float32)
+
     data_folder = "/g/data3/w48/dm5220/data"
-
-
 
     @staticmethod
     def months(n_char=2):
@@ -1124,40 +1131,52 @@ class UM:
 
         if 'air_pressure' not in x:
             return
-        if data_vars is None:
-            data_vars=['combined_cloud_amount',
-                    'air_temperature_0',
-                    'large_scale_rainfall_flux',
-                    'tendency_of_air_temperature_due_to_longwave_heating',
-                    'tendency_of_air_temperature_due_to_longwave_heating_assuming_clear_sky',
-                    'tendency_of_air_temperature_due_to_shortwave_heating',
-                    'tendency_of_air_temperature_due_to_shortwave_heating_assuming_clear_sky',
-                    ]
-        plevs = [1000, 925, 850, 700,
-                600, 500, 400, 300,
-                250, 200, 150, 100,
-                70, 50, 30, 20] * units.hPa
+        if data_vars is not None:
+            if not isinstance(data_vars,list): 
+                data_vars = [data_vars]
+        plevs = UM.pressure_levels * units.hPa
         pr = (x['air_pressure']).values * units.Pa
-        for var in data_vars:
-            if var not in x: continue
-            data = x[var]        
-            new=np.flip(
-                log_interpolate_1d(plevs, pr, data.values, axis=1),
-                axis=1)
-            new_name=data.name + "_plev"
-            
-            converted=xr.DataArray(data=dask.array.from_array(new,name=new_name),
-                coords=(data.time,
-                        x.pressure,
-                        data.latitude,
-                        data.longitude),
-                dims=("time","pressure","latitude","longitude"),
-                attrs={"standard_name":new_name,
-                    "units":"K",
-                    "grid_mapping":"latitude_longitude",
-                    "Converted":"Converted from 'model_level_number' vertical coordinates using metpy's 'log_interpolate_1d' function."})
-            x=x.assign({new_name:converted})
+        for name,data in x.data_vars.items():
+            if data_vars is not None:
+                if name not in data_vars:
+                    continue
+            if 'model_level_number' in data.dims and 'latitude' in data.dims and 'longitude' in data.dims:
+                new=np.flip(
+                    log_interpolate_1d(plevs, pr, data.values, axis=1),
+                    axis=1)
+                new_name = name + "_plev"
+                
+                converted=xr.DataArray(data=dask.array.from_array(new,name=new_name),
+                    coords=(data.time,
+                            x.pressure,
+                            data.latitude,
+                            data.longitude),
+                    dims=("time","pressure","latitude","longitude"),
+                    attrs={"standard_name":new_name,
+                        "units":"K",
+                        "grid_mapping":"latitude_longitude",
+                        "Converted":"Converted from 'model_level_number' vertical coordinates using metpy's 'log_interpolate_1d' function."})
+                x=x.assign({new_name:converted})
+            else:
+                continue
         return x
+
+    @staticmethod
+    def read_data(file,input_folder=None,stream='a',**open_mfdataset_kwargs):
+        if input_folder is None:
+            input_folder = UM.data_folder
+        data = open_mfdataset(
+            os.path.join(
+                input_folder,
+                f"{file}/*_p{stream}*.nc"),
+        parallel=True,
+        combine="nested",
+        concat_dim="time",
+        compat='override',
+        coords='minimal',
+        **open_mfdataset_kwargs,
+        )
+        return data
 
 class GREB:
     
@@ -2350,7 +2369,8 @@ def annual_mean(x,num=None,copy=True,update_attrs=True):
     New Dataset or DataArray object with average applied to its "time" dimension.
 
     '''
-
+    if 'time' not in x.dims:
+        return x
     if not check_xarray(x): exception_xarray()
     if 'annual_mean' in x.attrs: return x
     if 'seasonal_cycle' in x.attrs:
@@ -2360,11 +2380,11 @@ def annual_mean(x,num=None,copy=True,update_attrs=True):
         num = len(x['time'])
     elif num > len(x['time']): 
         num = len(x['time'])
+    x = x.isel(time=slice(-num,None))
     if update_attrs:
         x.attrs['annual_mean'] = 'Computed annual mean of {} timesteps'.format(num)
         if check_xarray(x,'Dataset'):
             for var in x: x._variables[var].attrs['annual_mean'] = 'Computed annual mean of {} timesteps'.format(num)
-    x = x.isel(time=slice(-num,None))
     return x.mean(dim='time',keep_attrs=True).squeeze()
 
 def annual_cycle(x,num=None,copy=True,update_attrs=True):
