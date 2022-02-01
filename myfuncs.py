@@ -39,6 +39,8 @@ class Dataset(xr.Dataset):
                 arg = UM.rename_m01s09i231(arg)
             if ("evaporation_flux_from_open_sea" in arg) and ("evaporation_from_soil_surface" in arg):
                 arg = UM.add_evaporation(arg)
+            if ("tendency_of_air_temperature_due_to_shortwave_heating" in arg) and ("tendency_of_air_temperature_due_to_longwave_heating" in arg):
+                arg = UM.add_tot_hrate(arg)
             try:
                 args = arg[1:]
             except:
@@ -622,7 +624,6 @@ class DataArray(xr.DataArray):
                         'xarray.DataArray containing t-student distribution probabilities.')
         else:
             if check_xarray(t_student,"DataArray"):
-                _check_shapes(t_student,self)
                 t_student = {"p":t_student}
             elif isinstance(t_student,np.ndarray):
                 t_student = {"p":xr.DataArray(data=t_student,dims = ["latitude","longitude"], coords=[UM.latitude,UM.longitude])}
@@ -646,17 +647,19 @@ class DataArray(xr.DataArray):
                         'xarray.DataArray containing t-student distribution probabilities.')
             p=t_student["p"]
             a=t_student["treshold"]
-            P=p.where(p<a,0).where(p>=a,1)
+            P=DataArray(p.where(p<a,0).where(p>=a,1))
             if core_dim == "lon": 
                 P = P.roll({lon:int(l/2)},roll_coords=True).assign_coords({lon:newlon})._to_contiguous_lon()
-            DataArray(P).plot.contourf(
-                                        yincrease=False,
-                                        yscale=yscale,
-                                        levels=np.linspace(0,1,3),
-                                        hatches=['',t_student['hatches']],
-                                        alpha=0,
-                                        add_colorbar=False,
-                                        )
+            _check_shapes(P,self)
+            contourf_kwargs['levels']=np.linspace(0,1,3)
+            contourf_kwargs['hatches']=['',t_student['hatches']]
+            contourf_kwargs['alpha']=0
+            contourf_kwargs['add_colorbar']=False
+            del contourf_kwargs['cbar_kwargs']
+            P.plot.contourf(
+                            ax=ax,
+                            **contourf_kwargs,
+                            )
         ax.set_xlabel("")
         if core_dim == "lat":
             ax.set_xticks(np.arange(-90,90+30,30))
@@ -956,6 +959,10 @@ class DataArray(xr.DataArray):
     def to_mm_per_day(self,copy=True,force=None):  
         if copy: self = self.copy()
         return UM.to_mm_per_day(self,force)
+    
+    def to_K_per_day(self,copy=True,force=None):  
+        if copy: self = self.copy()
+        return UM.to_K_per_day(self,force)
 
 class UM:
     longitude = np.array([  0.  ,   3.75,   7.5 ,  11.25,  15.  ,  18.75,  22.5 ,  26.25,
@@ -1080,6 +1087,45 @@ class UM:
                             x[variables[1]].where(x[variables[1]] <= 100,0))
 
     @staticmethod
+    def add_tot_hrate(x):
+        '''
+        Function to add the variable "tendency_of_air_temperature_due_to_total_heating" to the Dataset.
+        This variable is computed by adding together the 2 variables:
+        - 'tendency_of_air_temperature_due_to_longwave_heating'
+        - 'tendency_of_air_temperature_due_to_shortwave_heating'
+
+        Arguments
+        ----------
+        x : Dataset objects
+        Dataset to add the total heating rate variable to.
+
+        Returns
+        ----------
+        xarray.Dataset
+
+        New Dataset containing the "tendency_of_air_temperature_due_to_total_heating_plev" variable.
+        '''
+        variables=['tendency_of_air_temperature_due_to_total_heating',
+                   'tendency_of_air_temperature_due_to_total_heating_plev',
+                   'tendency_of_air_temperature_due_to_total_heating_assuming_clear_sky',
+                   'tendency_of_air_temperature_due_to_total_heating_assuming_clear_sky_plev']
+        for var in variables:
+            if var in x.variables: 
+                continue
+            else:
+                st=var.split('_')
+                ind=st.index('total')
+                vars = []
+                st[ind]='shortwave'
+                vars.append('_'.join(st))
+                st[ind]='longwave'
+                vars.append('_'.join(st))
+                for v in vars:
+                    if v not in x.variables: raise Exception(f'Current Dataset doesn"t include the variable "{v}".')
+                x = x.assign({var: x[vars[0]] + x[vars[1]]})
+        return x
+
+    @staticmethod
     def rename_m01s09i231(x):
         '''
         Function to rename the variable m01s09i231 of UM model to combined_cloud_amount.
@@ -1123,6 +1169,27 @@ class UM:
             else: return x
         else:
             raise Exception("Data units not understood")
+    
+    @staticmethod
+    def to_K_per_day(x,force=False):
+        '''
+        Function to convert data with units from "K s-1" to "K day-1"
+        '''
+        alpha = 86400
+        if 'units' not in x.attrs:
+            x.attrs['units']="TEMP_UNITS"
+        if (x.attrs['units'] in ["K s-1","K/s"]) or force:
+            x.attrs['units']="K/day"
+            return x*alpha
+        elif (x.name in ["tendency_of_air_temperature_due_to_shortwave_heating_plev",
+                        "tendency_of_air_temperature_due_to_longwave_heating_plev",
+                        "tendency_of_air_temperature_due_to_total_heating_plev"]):
+            if x.attrs['units'] not in ["K/day","K day-1","K d-1"]:
+                x.attrs['units']="K/day"
+                return x*alpha
+            else: return x
+        else:
+            raise Exception("Data units not understood")
 
     @staticmethod
     def to_pressure_lev(x,data_vars=None):
@@ -1130,9 +1197,9 @@ class UM:
         from metpy.units import units
 
         if 'air_pressure' not in x:
-            return
+            return x
         if data_vars is not None:
-            if not isinstance(data_vars,list): 
+            if not isinstance(data_vars,list):
                 data_vars = [data_vars]
         plevs = UM.pressure_levels * units.hPa
         pr = (x['air_pressure']).values * units.Pa
