@@ -1108,7 +1108,8 @@ class UM:
         variables=['tendency_of_air_temperature_due_to_total_heating',
                    'tendency_of_air_temperature_due_to_total_heating_plev',
                    'tendency_of_air_temperature_due_to_total_heating_assuming_clear_sky',
-                   'tendency_of_air_temperature_due_to_total_heating_assuming_clear_sky_plev']
+                   'tendency_of_air_temperature_due_to_total_heating_assuming_clear_sky_plev'
+                ]
         for var in variables:
             if var in x.variables: 
                 continue
@@ -1120,9 +1121,14 @@ class UM:
                 vars.append('_'.join(st))
                 st[ind]='longwave'
                 vars.append('_'.join(st))
+                ok=True
                 for v in vars:
-                    if v not in x.variables: raise Exception(f'Current Dataset doesn"t include the variable "{v}".')
-                x = x.assign({var: x[vars[0]] + x[vars[1]]})
+                    if v not in x.variables:
+                        warnings.warn(f"'{var}' couldn't be generated. Current Dataset doesn't include the variable '{v}'.")
+                        ok=False
+                        break
+                if ok:
+                    x = x.assign({var: x[vars[0]] + x[vars[1]]})
         return x
 
     @staticmethod
