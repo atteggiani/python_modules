@@ -87,8 +87,9 @@ class Dataset(xr.Dataset):
             coords.append(None)
         return coords
 
-    def annual_mean(self,num=None,copy=True,update_attrs=True):
-        return annual_mean(self,num=num,copy=copy,update_attrs=update_attrs)
+    def annual_mean(self,num=None,copy=True,update_attrs=True,normalize=False):
+        return annual_mean(self,num=num,copy=copy,update_attrs=update_attrs,
+            normalize=normalize)
 
     def annual_cycle(self,num=None,copy=True,update_attrs=True):
         return annual_cycle(self,num=num,copy=copy,update_attrs=update_attrs)
@@ -714,6 +715,7 @@ class DataArray(xr.DataArray):
             labels = None,
             colors = None,
             timesteps = None,
+            normalize = False,
             xlim=None,
             dx=None,
             title = None,
@@ -793,7 +795,7 @@ class DataArray(xr.DataArray):
                 data = data.sel(model_level_number=slice(None,32))
             
             if has_time:
-                am = data.annual_mean(timesteps)
+                am = data.annual_mean(timesteps,normalize=normalize)
                 min=data.isel(time=slice(-timesteps,None)).min('time')
                 max=data.isel(time=slice(-timesteps,None)).max('time')
             else:
@@ -895,8 +897,9 @@ class DataArray(xr.DataArray):
                 val=self.isel({lon:[0,-1]}).mean(lon)
                 return xr.concat([val.assign_coords({lon:-180.}),self,val.assign_coords({lon:180.})], dim=lon)    
 
-    def annual_mean(self,num=None,copy=True,update_attrs=True):
-        return annual_mean(self,num=num,copy=copy,update_attrs=update_attrs)
+    def annual_mean(self,num=None,copy=True,update_attrs=True,normalize=False):
+        return annual_mean(self,num=num,copy=copy,update_attrs=update_attrs,
+            normalize=normalize)
     
     def annual_cycle(self,num=None,copy=True,update_attrs=True):
         return annual_cycle(self,num=num,copy=copy,update_attrs=update_attrs)
@@ -2413,7 +2416,7 @@ def rms(x,copy=True,update_attrs=True):
         attrs['rms'] = 'Computed root mean square'
     return func(xr.apply_ufunc(lambda x: np.sqrt(x),gm,keep_attrs=True,dask='parallelized'),attrs=attrs)
 
-def annual_mean(x,num=None,copy=True,update_attrs=True):
+def annual_mean(x,num=None,copy=True,update_attrs=True,normalize=False):
     '''
     Compute the mean over 'time' dimension.
 
@@ -2434,6 +2437,9 @@ def annual_mean(x,num=None,copy=True,update_attrs=True):
     update_attrs : Bool
         If set to True (default), the new DataArray/Dataset will have an attribute
         as a reference that the annual_mean function has been applied to it.
+    normalize : Bool
+        If set to True, after computing the mean over the selected time coordinates, it divides it
+        by the standard deviation over time.
 
     Returns
     ----------
@@ -2458,7 +2464,10 @@ def annual_mean(x,num=None,copy=True,update_attrs=True):
         x.attrs['annual_mean'] = 'Computed annual mean of {} timesteps'.format(num)
         if check_xarray(x,'Dataset'):
             for var in x: x._variables[var].attrs['annual_mean'] = 'Computed annual mean of {} timesteps'.format(num)
-    return x.mean(dim='time',keep_attrs=True).squeeze()
+    if normalize:
+        return x.mean(dim='time',keep_attrs=True).squeeze()/x.std('time')
+    else:
+        return x.mean(dim='time',keep_attrs=True).squeeze()
 
 def annual_cycle(x,num=None,copy=True,update_attrs=True):
     '''
