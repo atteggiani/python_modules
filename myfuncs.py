@@ -1,5 +1,6 @@
 # LIBRARIES
 from typing import Type
+from pandas import ExcelWriter
 import xarray as xr
 from xarray.core.formatting import array_repr
 from importlib import reload
@@ -656,7 +657,7 @@ class DataArray(xr.DataArray):
             contourf_kwargs['hatches']=['',t_student['hatches']]
             contourf_kwargs['alpha']=0
             contourf_kwargs['add_colorbar']=False
-            del contourf_kwargs['cbar_kwargs']
+            if 'cbar_kwargs' in contourf_kwargs: del contourf_kwargs['cbar_kwargs']
             P.plot.contourf(
                             ax=ax,
                             **contourf_kwargs,
@@ -721,9 +722,11 @@ class DataArray(xr.DataArray):
             title = None,
             units = None,
             legend = True,
+            legend_kwargs={},
             double_axis=False,
             save_kwargs = None,
             outpath = None,
+            **plot_kwargs
             ):
         '''Plot DataArray vertical profiles.
             If time coord is provided, plots the profiles with confidence levels (min|mean|max values)
@@ -806,7 +809,8 @@ class DataArray(xr.DataArray):
                     yincrease=yincrease,
                     yscale=yscale,
                     label=label,
-                    color=color)
+                    color=color,
+                    **plot_kwargs)
             # Draw confidence levels (max, min over time)
             if has_time:
                 plt.fill_betweenx(y=getattr(am,levs), x1=min, x2=max,
@@ -833,7 +837,7 @@ class DataArray(xr.DataArray):
         plt.grid(ls="--",which='both',alpha=0.7)
         # Set legend
         if legend and np.all([l is not None for l in labels]):
-            plt.legend()
+            plt.legend(**legend_kwargs)
         # Set units (xlabel)
         if units is not None:
             plt.xlabel(units)
@@ -1010,7 +1014,7 @@ class UM:
                 70, 50, 30, 20],
                 dtype=np.float32)
 
-    data_folder = "/g/data3/w48/dm5220/data"
+    data_folder = "/g/data/w40/dm5220/data"
 
     @staticmethod
     def months(n_char=2):
@@ -1060,7 +1064,7 @@ class UM:
             
     @staticmethod
     def land_mask_file():
-        return "/g/data3/w48/dm5220/ancil/land_mask/land_mask.nc"
+        return "/g/data3/w40/dm5220/ancil/land_mask/land_mask.nc"
 
     @staticmethod
     def add_evaporation(x):
@@ -1149,14 +1153,14 @@ class UM:
         '''
         Function to split w component of winds into w_up and w_down
         '''
-        if 'omega_up' in x.variables:
+        if 'z_wind_up' in x.variables:
             return x
         else:
             d=x["upward_air_velocity"]
-            d_up=d.where(d>0,0)
+            d_up=d.where(d>=0,0)
             d_down=-d.where(d<0,0)
-            d_overtuning=d_down-d_up
-            return x.assign({"omega_up":d_up,"omega_down":d_down,"omega_overtuning":d_overtuning})
+            d_overturning=d_down-d_up
+            return x.assign({"z_wind_up":d_up,"z_wind_down":d_down,"z_wind_overturning":d_overturning})
 
     @staticmethod
     def to_mm_per_day(x,force=False):
@@ -1246,10 +1250,9 @@ class UM:
                 input_folder,
                 f"{file}/*_p{stream}*.nc"),
         parallel=True,
-        combine="nested",
-        concat_dim="time",
         compat='override',
         coords='minimal',
+        engine="h5netcdf",
         **open_mfdataset_kwargs,
         )
         return data
@@ -2437,9 +2440,10 @@ def annual_mean(x,num=None,copy=True,update_attrs=True,normalize=False):
     update_attrs : Bool
         If set to True (default), the new DataArray/Dataset will have an attribute
         as a reference that the annual_mean function has been applied to it.
-    normalize : Bool
+    normalize : Bool or xr.dataarray
         If set to True, after computing the mean over the selected time coordinates, it divides it
         by the standard deviation over time.
+        If set to a xr.dataarray, it uses that as the standard deviation to divide the mean.
 
     Returns
     ----------
@@ -2464,10 +2468,15 @@ def annual_mean(x,num=None,copy=True,update_attrs=True,normalize=False):
         x.attrs['annual_mean'] = 'Computed annual mean of {} timesteps'.format(num)
         if check_xarray(x,'Dataset'):
             for var in x: x._variables[var].attrs['annual_mean'] = 'Computed annual mean of {} timesteps'.format(num)
-    if normalize:
+    if normalize is True:
         return x.mean(dim='time',keep_attrs=True).squeeze()/x.std('time')
-    else:
+    elif check_xarray(normalize,'Dataarray') or isinstance(normalize,np.ndarray):
+        return x.mean(dim='time',keep_attrs=True).squeeze()/normalize
+    elif normalize is False:
         return x.mean(dim='time',keep_attrs=True).squeeze()
+    else:
+        raise Exception('"normalize" can be either Bool, xr.dataarray or numpy.ndarray.')
+        
 
 def annual_cycle(x,num=None,copy=True,update_attrs=True):
     '''

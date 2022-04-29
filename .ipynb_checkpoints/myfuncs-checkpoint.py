@@ -952,7 +952,7 @@ class Constants:
 
         @staticmethod
         def land_mask_file():
-            return "/g/data3/w48/dm5220/ancil/land_mask/land_mask.nc"
+            return "/g/data3/w40/dm5220/ancil/land_mask/land_mask.nc"
 
     class greb:
         @staticmethod
