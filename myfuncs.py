@@ -1210,6 +1210,7 @@ class UM:
         from metpy.units import units
 
         if 'air_pressure' not in x:
+            warnings.warn("Air pressure not found within the data variables. Cannot convert to pressure levels without Air Pressure.")
             return x
         if data_vars is not None:
             if not isinstance(data_vars,list):
