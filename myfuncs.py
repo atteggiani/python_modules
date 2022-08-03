@@ -161,8 +161,10 @@ class DataArray(xr.DataArray):
             data = False
         if isinstance(data,xr.DataArray):         
             super().__init__(data=data.data,coords=data.coords,dims=data.dims,name=data.name,attrs=data.attrs)
+            # super().__init__(data=dask.array.from_array(data),coords=data.coords,dims=data.dims,name=data.name,attrs=data.attrs)
         else:
             super().__init__(data,*args[1:],**kwargs)
+            # super().__init__(dask.array.from_array(data),*args[1:],**kwargs)
 
     def get_spatial_coords(self):
         lats=["latitude","latitude_0","lat"]
@@ -282,40 +284,36 @@ class DataArray(xr.DataArray):
         if (self.name == 'tocean'):
             ax.add_feature(cfeature.NaturalEarthFeature('physical', 'land', '110m'),
                                   **land_kwargs)
-
-        fmt = ".2f"
-        fs = 12
         
         if isinstance(statistics,dict):
-            if "fs" in statistics:
-                fs = statistics["fs"]
-            elif "fontsize" in statistics:
-                fs = statistics["fontsize"]
-            if "format" in statistics:
-                fmt = statistics["format"]
             if "value" not in statistics: 
                 raise Exception("Missing 'value' key in statistics. 'value' must be either 'all', 'gmean' or 'rms'.")
-            else: statistics = statistics['value']
-
+            else:
+                txt_kwargs=statistics.copy()
+                statistics = statistics.copy()['value']
+                del txt_kwargs["value"]
+        else:
+            txt_kwargs=dict()
+        txt_kwargs.setdefault("fontsize",12)
+        txt_kwargs.setdefault("format",".2f")
+        txt_kwargs.setdefault("verticalalignment",'top')
+        txt_kwargs.setdefault("horizontalalignment",'center')
+        txt_kwargs.setdefault("transform",ax.transAxes)
+        txt_kwargs.setdefault("weight",'bold')                
         if isinstance(statistics,str):
             x_txt,y_txt = 0.5,-0.1
+            gm=self.global_mean().values
+            rms=self.rms().values
             if statistics == 'all':
-                gm=self.global_mean().values
-                rms=self.rms().values
-                txt = (f'gmean = {gm:{fmt}}  |  rms = {rms:{fmt}}').format(gm,rms)
-                ax.text(x_txt,y_txt,txt,verticalalignment='top',horizontalalignment='center',
-                        transform=ax.transAxes,fontsize=fs, weight='bold')
+                txt = f'gmean = {gm:{txt_kwargs["format"]}}  |  rms = {rms:{txt_kwargs["format"]}}'
             elif statistics == 'gmean':
-                gm=self.global_mean().values
-                txt = (f'gmean = {gm:{fmt}}')
-                ax.text(x_txt,y_txt,txt,verticalalignment='top',horizontalalignment='center',
-                        transform=ax.transAxes,fontsize=fs, weight='bold')
+                txt = f'gmean = {gm:{txt_kwargs["format"]}}'
             elif statistics == 'rms':
-                rms=self.rms().values
-                txt = (f'rms = {rms:{fmt}}')
-                ax.text(x_txt,y_txt,txt,verticalalignment='top',horizontalalignment='center',
-                        transform=ax.transAxes,fontsize=fs, weight='bold')
-            else: raise Exception("Invalid string for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
+                txt = f'gmean = {rms:{txt_kwargs["format"]}}'
+            else:
+                raise Exception("Invalid string for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
+            del txt_kwargs["format"]
+            ax.text(x_txt,y_txt,txt,**txt_kwargs)
         elif (statistics is None) or (not statistics):
             pass
         else: raise Exception("Invalid type for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
@@ -791,6 +789,11 @@ class DataArray(xr.DataArray):
         else:
             raise Exception('Vertical levels not present or not understood!')
 
+        if "ax" in plot_kwargs:
+            ax=plot_kwargs["ax"]
+        else:
+            ax=plt.axes()
+
         for data,label,color in zip(all_data,labels,colors):
             if plev:
                 data = data.sel(pressure=slice(49,1001))
@@ -813,42 +816,41 @@ class DataArray(xr.DataArray):
                     **plot_kwargs)
             # Draw confidence levels (max, min over time)
             if has_time:
-                plt.fill_betweenx(y=getattr(am,levs), x1=min, x2=max,
+                ax.fill_betweenx(y=getattr(am,levs), x1=min, x2=max,
                                 color=color, alpha=0.2)
-        ax=plt.gca()
         # Draw vertical 0 line
-        plt.vlines(0, ymin, ymax, colors='k', ls='--',lw=0.8)
+        ax.vlines(0, ymin, ymax, colors='k', ls='--',lw=0.8)
         # Set ylim
-        plt.ylim([ymin,ymax])
+        ax.set_ylim(ymin,ymax)
         # Set xlim and xticks
         if xlim is not None:
-            plt.xlim(xlim)
+            ax.set_xlim(xlim)
         if dx is not None:
-            plt.gca().set_xticks(np.arange(xlim[0],xlim[1]+dx,dx))
+            ax.set_xticks(np.arange(xlim[0],xlim[1]+dx,dx))
         # Set yticks/yticklabels
-        plt.gca().set_yticks(yticks)
+        ax.set_yticks(yticks)
         if plev:
-            plt.gca().set_yticklabels([str(i) for i in yticks])
+            ax.set_yticklabels([str(i) for i in yticks])
         else:
             ticklabels=[str(i) for i in yticks]
             ticklabels[1::2]=["" for _ in ticklabels[1::2]]    
-            plt.gca().set_yticklabels(ticklabels,fontsize=8)
+            ax.set_yticklabels(ticklabels,fontsize=8)
         # Set grid
-        plt.grid(ls="--",which='both',alpha=0.7)
+        ax.grid(ls="--",which='both',alpha=0.7)
         # Set legend
         if legend and np.all([l is not None for l in labels]):
-            plt.legend(**legend_kwargs)
+            ax.legend(**legend_kwargs)
         # Set units (xlabel)
         if units is not None:
-            plt.xlabel(units)
+            ax.set_xlabel(units)
         # Set ylabel
         if plev:
-            plt.ylabel("Pressure [hPa]")
+            ax.set_ylabel("Pressure [hPa]")
         else:
-            plt.ylabel("Model Level Number")
+            ax.set_ylabel("Model Level Number")
         # Set double axis
         if double_axis:
-            ax2=plt.gca().twinx()
+            ax2=ax.twinx()
             if plev:
                 ax2.set_ylabel('Model Level Number')
                 ax2.set_ylim([1000,50])
@@ -860,7 +862,8 @@ class DataArray(xr.DataArray):
                 ax2.set_ylim([1,32])
                 ax2.set_yticks([1,5,8,10,17,25,29,31])
                 ax2.set_yticklabels(['~1000','~900','~850','~750','~500','~200','~100','~60'],fontsize=8)
-            # ax2.set_title(None)
+            for sp in ax2.spines:
+                ax2.spines[sp].set_visible(False)
         # Set Title
         if title is None:
             title=d.name
@@ -2048,7 +2051,7 @@ class Colormaps:
         w1=np.array(list(map(lambda x: np.linspace(x,1,28),col1[-1]))).transpose()
         col2=cm0(np.linspace(0.6,1,100))
         w2=np.array(list(map(lambda x: np.linspace(1,x,28),col2[0]))).transpose()
-        cols1=np.vstack([col1,w1,w2,col2])
+        cols1=np.vstack([col1,w1,[1.,1.,1.,1.],w2,col2])
         return colors.LinearSegmentedColormap.from_list(name, cols1)
 
     def add_white_start(colormap,name=None):
@@ -3014,6 +3017,90 @@ def load_dataset(x,chunks=None,**load_dataset_kwargs):
     '''
     if chunks is None: chunks == -1
     return Dataset(xr.load_dataset(x,chunks=chunks,**load_dataset_kwargs))
+
+def zoom_effect(ax1, ax2, xlim, ylim, direction="right", patch1_kwargs={}, patch2_kwargs={}, lines_kwargs={}):
+    '''
+    Function to create a zoom effect on separate axes, with boundary boxes connected by two lines, in the set direction.
+
+    Arguments
+    ----------
+    ax1 : matplotlib.pyplot.Axes
+        The main axes
+    ax2 : matplotlib.pyplot.Axes
+        The zoom axes
+    xlim : tuple
+        The zoom extent on the x-axis in the form (xmin,xmax).
+    xlim : tuple
+        The zoom extent on the y-axis in the form (ymin,ymax).
+    
+    Parameters
+    ----------
+    direction : str
+        Defines the direction in which the connector lines should point.
+        Can be either "right", "left", "up" or "down".
+        Default value is "right".
+        
+    patch1_kwargs : dict
+        kwargs for the patch on the main axes.
+        
+    patch2_kwargs : dict
+        kwargs for the patch on the zoom axes.
+        
+    lines_kwargs : dict
+        kwargs for the connector lines.
+    
+    Returns
+    ----------
+    xarray.Dataset or xarray.DataArray
+    New Dataset or DataArray object with average applied to its "time" dimension, every 3 values.
+    '''
+
+    from matplotlib.transforms import (
+        Bbox, TransformedBbox, blended_transform_factory)
+    from mpl_toolkits.axes_grid1.inset_locator import (
+        BboxPatch, BboxConnector, BboxConnectorPatch)
+
+    def connect_bbox(bbox1, bbox2,
+                 loc1_bbox1, loc1_bbox2, loc2_bbox1, loc2_bbox2,
+                 lines_kwargs={}, patch1_kwargs={},patch2_kwargs={}):
+        lines_kwargs.setdefault("clip_on",False)
+        patch1_kwargs.setdefault("zorder",ax1.spines["top"].get_zorder()+1)
+        patch2_kwargs.setdefault("zorder",ax2.spines["top"].get_zorder()+1)
+        c1 = BboxConnector(
+            bbox1, bbox2, loc1=loc1_bbox1, loc2=loc1_bbox2, **lines_kwargs)
+        c2 = BboxConnector(
+            bbox1, bbox2, loc1=loc2_bbox1, loc2=loc2_bbox2, **lines_kwargs)
+
+        bbox_patch1 = BboxPatch(bbox1, **patch1_kwargs)
+        bbox_patch2 = BboxPatch(bbox2, **patch2_kwargs)
+
+        return c1, c2, bbox_patch1, bbox_patch2
+
+    bbox = Bbox.from_extents(xlim[0], ylim[0], xlim[1], ylim[1])
+        
+    mybbox1 = TransformedBbox(bbox, ax1.transData)
+    mybbox2 = TransformedBbox(bbox, ax2.transData)
+    if direction.lower() == "right":
+        locations=[1,2,4,3]
+    elif direction.lower() == "down":
+        locations=[3,2,4,1]
+    elif direction.lower() == "left":
+        locations=[2,1,3,4]
+    elif direction.lower() == "up":
+        locations=[2,3,1,4]
+    else:
+        raise Exception("direction must be either 'right', 'left','up' or 'down'.")
+
+    c1, c2, bbox_patch1, bbox_patch2 = connect_bbox(
+        mybbox1, mybbox2,*locations,
+        lines_kwargs=lines_kwargs, patch1_kwargs=patch1_kwargs, patch2_kwargs=patch2_kwargs)
+
+    ax1.add_patch(bbox_patch1)
+    ax2.add_patch(bbox_patch2)
+    ax2.add_patch(c1)
+    ax2.add_patch(c2)
+
+    return c1, c2, bbox_patch1, bbox_patch2
 
 # ============================================================================ #
 # ============================================================================ #
