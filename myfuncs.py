@@ -126,8 +126,8 @@ class Dataset(xr.Dataset):
         if copy: self = self.copy()
         return self.apply(lambda x: func(x),keep_attrs=True)
 
-    def group_by(self,time_group,copy=True,update_attrs=True):
-        return group_by(self,time_group,copy=copy,update_attrs=update_attrs)
+    def group_by(self,time_group,num=None,copy=True,update_attrs=True):
+        return group_by(self,time_group,num=num,copy=copy,update_attrs=update_attrs)
 
     def srex_mean(self,copy=True):
         mask=SREX_regions.mask()
@@ -309,7 +309,7 @@ class DataArray(xr.DataArray):
             elif statistics == 'gmean':
                 txt = f'gmean = {gm:{txt_kwargs["format"]}}'
             elif statistics == 'rms':
-                txt = f'gmean = {rms:{txt_kwargs["format"]}}'
+                txt = f'rms = {rms:{txt_kwargs["format"]}}'
             else:
                 raise Exception("Invalid string for statistics. statistics must be either 'all', 'gmean' or 'rms'.")
             del txt_kwargs["format"]
@@ -362,8 +362,17 @@ class DataArray(xr.DataArray):
             gl.left_labels = True
             gl.right_labels=False
             gl.xlines = True
-
-        ax.set_title(title)
+        
+        title_kwargs=dict()
+        if isinstance(title,dict):
+            if "label" not in title:
+                raise Exception("Title dictionary needs to have the 'label' keyword for the text to use as the title")
+            else:
+                titlelabel=title.pop("label")
+                title_kwargs=title
+        else:
+            titlelabel=title
+        ax.set_title(titlelabel,**title_kwargs)
 
         if save_kwargs is not None:
             save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
@@ -656,6 +665,7 @@ class DataArray(xr.DataArray):
             contourf_kwargs['alpha']=0
             contourf_kwargs['add_colorbar']=False
             if 'cbar_kwargs' in contourf_kwargs: del contourf_kwargs['cbar_kwargs']
+            if 'extend' in contourf_kwargs: del contourf_kwargs['extend']
             P.plot.contourf(
                             ax=ax,
                             **contourf_kwargs,
@@ -688,19 +698,38 @@ class DataArray(xr.DataArray):
         if double_axis:
             ax2=ax.twinx()
             if vertical_levs == "pressure":
-                ax2.set_ylabel('Model Level Number')
                 ax2.set_ylim([1000,50])
                 ax2.set_yscale('log')
-                ax2.set_yticks([1000,900,700,500,200,100,60])
-                ax2.set_yticklabels(['~1','~5','~12','~17','~25','~29','~31'],fontsize=8)
+                if double_axis == "height":
+                    ax2.set_ylabel('Height')
+                    ax2.set_yticks([1000,800,600,400,200,100,50])
+                    ax2.set_yticklabels(['~20m','~500m','~3km','~6km','~12km','~17km','~20km'],fontsize=8)
+                else:
+                    ax2.set_ylabel('Model Level Number')
+                    ax2.set_yticks([1000,900,700,500,200,100,60])
+                    ax2.set_yticklabels(['~1','~5','~12','~17','~25','~29','~31'],fontsize=8)
             elif vertical_levs == "um_levs":
-                ax2.set_ylabel('Pressure [hPa]')
                 ax2.set_ylim([1,32])
                 ax2.set_yticks([1,5,8,10,17,25,29,31])
-                ax2.set_yticklabels(['~1000','~900','~850','~750','~500','~200','~100','~60'],fontsize=8)
+                if double_axis == "height":
+                    ax2.set_ylabel('Height')
+                    ax2.set_yticklabels(['~20m','~500m','~3km','~6km','~12km','~17km','~20km'],fontsize=8)
+                else:
+                    ax2.set_ylabel('Pressure [hPa]')
+                    ax2.set_yticklabels(['~1000','~900','~850','~750','~500','~200','~100','~60'],fontsize=8)                
         # Set Title
-        if title is None: title=self.name
-        ax.set_title(title)
+        title_kwargs=dict()
+        if title is None:
+            titlelabel=self.name
+        elif isinstance(title,dict):
+            if "label" not in title:
+                raise Exception("Title dictionary needs to have the 'label' keyword for the text to use as the title")
+            else:
+                titlelabel=title.pop("label")
+                title_kwargs=title
+        else:
+            titlelabel=title
+        ax.set_title(titlelabel,**title_kwargs)
         if save_kwargs is not None:
             save_kwargs = {'dpi':300, 'bbox_inches':'tight', **save_kwargs}
         else:
@@ -852,16 +881,25 @@ class DataArray(xr.DataArray):
         if double_axis:
             ax2=ax.twinx()
             if plev:
-                ax2.set_ylabel('Model Level Number')
                 ax2.set_ylim([1000,50])
                 ax2.set_yscale('log')
-                ax2.set_yticks([1000,900,700,500,200,100,60])
-                ax2.set_yticklabels(['~1','~5','~12','~17','~25','~29','~31'],fontsize=8)
+                if double_axis == "height":
+                    ax2.set_ylabel('Height')
+                    ax2.set_yticks([1000,800,600,400,200,100,50])
+                    ax2.set_yticklabels(['~20m','~500m','~3km','~6km','~12km','~17km','~20km'],fontsize=8)
+                else:
+                    ax2.set_ylabel('Model Level Number')
+                    ax2.set_yticks([1000,900,700,500,200,100,60])
+                    ax2.set_yticklabels(['~1','~5','~12','~17','~25','~29','~31'],fontsize=8)
             else:
-                ax2.set_ylabel('Pressure [hPa]')
                 ax2.set_ylim([1,32])
                 ax2.set_yticks([1,5,8,10,17,25,29,31])
-                ax2.set_yticklabels(['~1000','~900','~850','~750','~500','~200','~100','~60'],fontsize=8)
+                if double_axis == "height":
+                    ax2.set_ylabel('Height')
+                    ax2.set_yticklabels(['~20m','~500m','~3km','~6km','~12km','~17km','~20km'],fontsize=8)
+                else:
+                    ax2.set_ylabel('Pressure [hPa]')
+                    ax2.set_yticklabels(['~1000','~900','~850','~750','~500','~200','~100','~60'],fontsize=8)
             for sp in ax2.spines:
                 ax2.spines[sp].set_visible(False)
         # Set Title
@@ -948,8 +986,8 @@ class DataArray(xr.DataArray):
             raise Exception('Cannot convert to Celsius.\n{} '.format(self.name)+
                             'does not have temperature units.')
 
-    def group_by(self,time_group,copy=True,update_attrs=True):
-        return group_by(self,time_group,copy=copy,update_attrs=update_attrs)
+    def group_by(self,time_group,num=None,copy=True,update_attrs=True):
+        return group_by(self,time_group,num=num,copy=copy,update_attrs=update_attrs)
 
     def srex_mean(self,copy=True):
         mask=SREX_regions.mask()
@@ -1213,8 +1251,7 @@ class UM:
         from metpy.units import units
 
         if 'air_pressure' not in x:
-            warnings.warn("Air pressure not found within the data variables. Cannot convert to pressure levels without Air Pressure.")
-            return x
+            raise Exception("Air pressure not found within the data variables. Cannot convert to pressure levels without Air Pressure.")
         if data_vars is not None:
             if not isinstance(data_vars,list):
                 data_vars = [data_vars]
@@ -1230,16 +1267,16 @@ class UM:
                     axis=1)
                 new_name = name + "_plev"
                 
+                attrs=data.attrs
+                attrs.setdefault("standard_name",new_name)
+                attrs.setdefault("Converted","Converted from 'model_level_number' vertical coordinates using metpy's 'log_interpolate_1d' function.")
                 converted=xr.DataArray(data=dask.array.from_array(new,name=new_name),
                     coords=(data.time,
                             x.pressure,
                             data.latitude,
                             data.longitude),
                     dims=("time","pressure","latitude","longitude"),
-                    attrs={"standard_name":new_name,
-                        "units":"K",
-                        "grid_mapping":"latitude_longitude",
-                        "Converted":"Converted from 'model_level_number' vertical coordinates using metpy's 'log_interpolate_1d' function."})
+                    attrs=attrs)
                 x=x.assign({new_name:converted})
             else:
                 continue
@@ -2115,7 +2152,7 @@ class SREX_regions:
             text_kws["fontsize"] = 8
         srex_regions.plot(text_kws=text_kws,**kwargs)
 
-def group_by(x,time_group,copy=True,update_attrs=True):
+def group_by(x,time_group,num=None,copy=True,update_attrs=True):
     """
     Group an xarray.Dataset object according to a specific time group and compute
     the mean over the values.
@@ -2133,6 +2170,10 @@ def group_by(x,time_group,copy=True,update_attrs=True):
 
     Parameters
     ----------
+    num : int
+        If set to None (default), compute the mean over all the time coordinate.
+        Otherwise it takes into account only the last "num_year" timesteps.
+        If num years > len(time coordinate), the mean gets computed over all the time coordinate.
     copy : Bool
        set to True (default) if you want to return a copy of the argument in
        input; set to False if you want to overwrite the input argument.
@@ -2156,6 +2197,11 @@ def group_by(x,time_group,copy=True,update_attrs=True):
         if check_xarray(x,'Dataset'):
             for var in x: x._variables[var].attrs['grouped_by'] = time_group
     interp=False
+    if num is None: 
+        num = len(x['time'])
+    elif num > len(x['time']): 
+        num = len(x['time'])
+    x = x.isel(time=slice(-num,None))
     if time_group == '12h':
         nt=730
         time_group = 'month'
@@ -2983,7 +3029,9 @@ def t_student_probability(x,y,season=None,num_years=None):
     x1=x1.isel(time=slice(-num_years,None))
     y1=y1.isel(time=slice(-num_years,None))
 
-    p=stats.ttest_ind(x1,y1,nan_policy="omit").pvalue
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')    
+        p=stats.ttest_ind(x1,y1,nan_policy="omit").pvalue
     p[np.where(np.isnan(p))]=1
     dims=list(x.dims)
     dims.remove('time')
